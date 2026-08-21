@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+pydantic
+anthropic
+pillow
+python-multipart
