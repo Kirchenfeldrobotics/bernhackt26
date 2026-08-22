@@ -21,11 +21,11 @@ API_URL = "https://bernhackt26.kirchenfeldrobotics.ch/receive-data"
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Anchors: {"anchors": [{"label", "position", "rotation", "size"}, ...]}
-ROOM_JSON = os.path.join(HERE, "data", "room.json")
+ROOM_JSON = os.path.join(HERE, "room.json")
 
 IMAGES = [
-    os.path.join(HERE, "data", "img_00.jpg"),
-    os.path.join(HERE, "data", "img_01.jpg"),
+    os.path.join(HERE, "img_00.jpg"),
+    os.path.join(HERE, "img_01.jpg"),
 ]
 
 # describe_room() calls Gemini before answering, so this is not quick.
