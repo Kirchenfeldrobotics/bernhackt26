@@ -1,10 +1,9 @@
-import os
-
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List, Optional
 
-from google import genai
+import gemini
+from Objects import OBJECT_TYPES as Object
 
 load_dotenv()
 
@@ -27,18 +26,13 @@ class Payload(BaseModel):
     captures: List[str]
 
 
-def describe_room(room: Room, captures: List[str], batch_dir: str) -> dict:
-    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-
+async def describe_room(room: Room, captures: List[str], batch_dir: str) -> dict:
     prompt = (
-        f"Describe this scanned room based on the following anchors: "
-        f"{[anchor.model_dump() for anchor in room.anchors]}. "
-        f"{len(captures)} image(s) were also captured of the room."
+        f"""Help me get the coordinates of the following targets: {Object.TRASHES}. They are contained in the following images: {len(captures)} inside this room/workspace.
+        For coordination references, you will have these anchors that were identified, with coordinates and names, please use these referential positions to help identify your target.
+        {[anchor.model_dump() for anchor in room.anchors]}."""
     )
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-    )
+    text = await gemini.generate(prompt, images=captures)
 
-    return {"description": response.text}
+    return {"description": text}
