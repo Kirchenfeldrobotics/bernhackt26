@@ -9,10 +9,7 @@ import base64
 import os
 from datetime import datetime
 
-import categories
-import models
-import schemas
-from db import get_db, init_db
+from database import categories, get_db, init_db, models, schemas
 
 
 @asynccontextmanager

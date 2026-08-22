@@ -6,7 +6,9 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 # SQLite by default. To move to Postgres later, only this env var changes:
 #   DATABASE_URL="postgresql+psycopg://user:pass@127.0.0.1:5433/bernhackt26"
-DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "app.db")
+DEFAULT_DB_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "app.db"
+)
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
 
 if DATABASE_URL.startswith("sqlite:///"):
@@ -36,6 +38,6 @@ def get_db():
 
 def init_db() -> None:
     """Create any missing tables. Call once on app startup."""
-    import models  # noqa: F401  (registers models on Base before create_all)
+    from . import models  # noqa: F401  (registers models on Base before create_all)
 
     Base.metadata.create_all(bind=engine)

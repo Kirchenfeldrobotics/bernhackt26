@@ -4,3 +4,5 @@ server/received/
 *.pyc
 server/data/
 *.db
+.env
+*.env

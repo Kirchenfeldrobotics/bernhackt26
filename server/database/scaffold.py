@@ -3,12 +3,12 @@
 Run it directly to (re)initialise the database and insert a couple of example
 rows, then delete the examples and build your real logic on top:
 
-    python scaffold.py
+    python -m database.scaffold
 """
 from sqlalchemy import select
 
-import models
-from db import SessionLocal, init_db
+from . import models
+from .session import SessionLocal, init_db
 
 
 def main():

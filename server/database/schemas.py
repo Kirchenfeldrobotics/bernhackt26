@@ -4,7 +4,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-import categories
+from . import categories
 
 
 class CompanyIn(BaseModel):

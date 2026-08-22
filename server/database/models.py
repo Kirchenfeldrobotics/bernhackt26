@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from db import Base
+from .session import Base
 
 
 class Company(Base):
