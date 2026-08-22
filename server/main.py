@@ -21,6 +21,8 @@ from datetime import datetime
 
 import llm.gemini as gemini
 from llm.roomDescription import Anchor, Room, Payload, describe_room
+from llm.determine_problems import determine_problems, CompanyNotFound
+from llm.conclusion import conclusion
 from database import categories, get_db, init_db, models, schemas
 
 
@@ -60,21 +62,36 @@ async def receive_data(payload: Payload):
     with open(f"{batch_dir}/room.json", "w") as f:
         f.write(payload.room.model_dump_json(indent=2))
 
-    description = await describe_room(payload.room, payload.captures, batch_dir)
-    with open(f"{batch_dir}/description.json", "w") as f:
-        json.dump(description, f, indent=2)
+    try:
+        description = await describe_room(payload.room, payload.captures, batch_dir)
+        with open(f"{batch_dir}/description.json", "w") as f:
+            json.dump(description, f, indent=2)
 
-    print(f"[{stamp}] {len(payload.room.anchors)} anchors, {len(payload.captures)} images saved to {batch_dir}")
+        print(f"[{stamp}] {len(payload.room.anchors)} anchors, {len(payload.captures)} images saved to {batch_dir}")
 
-    # Kick off agent pipline
+        problems = await determine_problems(json.dumps(description), payload.company_name)
+        plan = await conclusion(payload.room.model_dump(), problems)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except CompanyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except gemini.GeminiNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except gemini.GeminiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
-    # Send data back to vr
+    with open(f"{batch_dir}/problems.txt", "w") as f:
+        f.write(problems)
+    with open(f"{batch_dir}/plan.json", "w") as f:
+        json.dump(plan, f, indent=2)
 
     return {
         "status": "ok",
         "batch": stamp,
         "received_images": len(payload.captures),
         "description": description,
+        "problems": problems,
+        "plan": plan,
     }
 
 
