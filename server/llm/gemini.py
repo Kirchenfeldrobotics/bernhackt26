@@ -12,7 +12,7 @@ from typing import Any, Sequence
 from google import genai
 from google.genai import errors, types
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.6-flash"
 
 # The VR app sends JPEG captures, and /send-to-gemini takes them the same way:
 # raw base64, no data-URL prefix.
