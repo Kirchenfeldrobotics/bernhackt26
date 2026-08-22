@@ -51,3 +51,4 @@ server/data/
 *.db
 .env
 *.env
+graphify-out/
