@@ -18,6 +18,9 @@ import httpx
 
 API_URL = "https://bernhackt26.kirchenfeldrobotics.ch/receive-data"
 
+# Must already exist in the database -- see test/company_post_sim.py.
+COMPANY_NAME = "3dMike"
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Anchors: {"anchors": [{"label", "position", "rotation", "size"}, ...]}
@@ -45,9 +48,10 @@ for path in IMAGES:
     with open(path, "rb") as f:
         captures.append(base64.b64encode(f.read()).decode())
 
-payload = {"room": room, "captures": captures}
+payload = {"room": room, "captures": captures, "company_name": COMPANY_NAME}
 
 print(f"POST {API_URL}")
+print(f"  company {COMPANY_NAME}")
 print(f"  {len(room.get('anchors', []))} anchors from {ROOM_JSON}")
 for path, b64 in zip(IMAGES, captures):
     print(f"  {os.path.basename(path)}: {len(b64)} chars of base64")
