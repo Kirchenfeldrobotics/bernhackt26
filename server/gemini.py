@@ -61,7 +61,9 @@ async def generate(prompt: str, images: Sequence[str] = (), model: str | None = 
 
     try:
         response = await get_client().aio.models.generate_content(
-            model=model or os.getenv("GEMINI_MODEL", DEFAULT_MODEL),
+            # `or` rather than a getenv default: an env var that is set but
+            # empty (GEMINI_MODEL="") must fall back too.
+            model=model or os.getenv("GEMINI_MODEL") or DEFAULT_MODEL,
             contents=[types.Content(role="user", parts=parts)],
         )
     except errors.APIError as exc:
