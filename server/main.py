@@ -28,7 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-RECEIVE_DIR = "/var/www/bernhackt26/received"
+RECEIVE_DIR = os.getenv("RECEIVE_DIR", "/var/www/bernhackt26/received")
 os.makedirs(RECEIVE_DIR, exist_ok=True)
 
 
