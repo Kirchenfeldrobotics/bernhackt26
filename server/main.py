@@ -16,9 +16,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import base64
+import json
 from datetime import datetime
 
 import gemini
+from roomDescription import Anchor, Room, Payload, describe_room
 from database import categories, get_db, init_db, models, schemas
 
 
@@ -40,20 +42,6 @@ app.add_middleware(
 RECEIVE_DIR = os.getenv("RECEIVE_DIR", "/var/www/bernhackt26/received")
 os.makedirs(RECEIVE_DIR, exist_ok=True)
 
-
-class Anchor(BaseModel):
-    label: str
-    position: List[float]
-    rotation: List[float]
-    size: Optional[List[float]] = None
-
-class Room(BaseModel):
-    anchors: List[Anchor]
-
-class Payload(BaseModel):
-    room: Room
-    captures: List[str]
-
 @app.get("/")
 async def root():
     return {"status": "alive"}
@@ -72,16 +60,22 @@ async def receive_data(payload: Payload):
     with open(f"{batch_dir}/room.json", "w") as f:
         f.write(payload.room.model_dump_json(indent=2))
 
+    description = await describe_room(payload.room, payload.captures, batch_dir)
+    with open(f"{batch_dir}/description.json", "w") as f:
+        json.dump(description, f, indent=2)
+
     print(f"[{stamp}] {len(payload.room.anchors)} anchors, {len(payload.captures)} images saved to {batch_dir}")
 
     # Kick off agent pipline
 
+    # Send data back to vr
 
-    
-
-    # Send data back to vr 
-
-    return {"status": "ok", "batch": stamp, "received_images": len(payload.captures)}
+    return {
+        "status": "ok",
+        "batch": stamp,
+        "received_images": len(payload.captures),
+        "description": description,
+    }
 
 
 # --- gemini -----------------------------------------------------------------
