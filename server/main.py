@@ -23,7 +23,7 @@ import llm.gemini as gemini
 from llm.roomDescription import Anchor, Room, Payload, describe_room
 from llm.determine_problems import determine_problems, CompanyNotFound
 from llm.conclusion import conclusion
-from database import categories, get_db, init_db, models, schemas
+from database import categories, get_db, init_db, models, persistence, schemas
 
 
 @asynccontextmanager
@@ -59,7 +59,7 @@ async def root():
     return {"status": "alive"}
 
 @app.post("/receive-data")
-async def receive_data(payload: Payload):
+async def receive_data(payload: Payload, db: Session = Depends(get_db)):
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     batch_dir = os.path.join(RECEIVE_DIR, stamp)
     os.makedirs(batch_dir, exist_ok=True)
@@ -93,6 +93,11 @@ async def receive_data(payload: Payload):
         f.write(problems)
     with open(f"{batch_dir}/plan.json", "w") as f:
         json.dump(plan, f, indent=2)
+
+    try:
+        persistence.save_plan(plan, payload.company_name, stamp, db)
+    except Exception as exc:  # Gemini already succeeded; do not lose that response.
+        print(f"[{stamp}] failed to persist conclusions to the database: {exc}")
 
     return {
         "status": "ok",
