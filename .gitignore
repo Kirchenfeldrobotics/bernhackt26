@@ -2,8 +2,10 @@ __pycache__/
 venv/
 .venv/
 server/received/
+server/.env
 *.pyc
 node_modules
+
 
 
 # Unity generated — regenerated on Open Project

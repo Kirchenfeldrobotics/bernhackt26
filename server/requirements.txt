@@ -5,3 +5,6 @@ anthropic
 pillow
 python-multipart
 sqlalchemy
+python-dotenv
+
+google-genai
