@@ -112,6 +112,79 @@ async def send_to_gemini(payload: GeminiRequest):
     return {"status": "ok", "output": output}
 
 
+# --- stored gemini outputs --------------------------------------------------
+
+# The name of every batch directory /receive-data writes, so it doubles as the
+# batch's timestamp.
+BATCH_STAMP_FORMAT = "%Y%m%d_%H%M%S"
+
+
+class GeminiOutputOut(BaseModel):
+    """One Gemini answer that /receive-data already stored on disk."""
+
+    batch: str
+    created_at: datetime
+    images: int
+    anchors: int
+    description: str
+
+
+def _read_batch(batch: str) -> Optional[GeminiOutputOut]:
+    """Load one stored batch, or None if it holds no Gemini output (yet)."""
+    batch_dir = os.path.join(RECEIVE_DIR, batch)
+    description_path = os.path.join(batch_dir, "description.json")
+    if not os.path.isfile(description_path):
+        return None
+
+    with open(description_path) as f:
+        description = json.load(f).get("description", "")
+
+    anchors = 0
+    room_path = os.path.join(batch_dir, "room.json")
+    if os.path.isfile(room_path):
+        with open(room_path) as f:
+            anchors = len(json.load(f).get("anchors", []))
+
+    try:
+        created_at = datetime.strptime(batch, BATCH_STAMP_FORMAT)
+    except ValueError:  # a directory not named by receive_data
+        created_at = datetime.fromtimestamp(os.path.getmtime(batch_dir))
+
+    return GeminiOutputOut(
+        batch=batch,
+        created_at=created_at,
+        images=len([n for n in os.listdir(batch_dir) if n.endswith(".jpg")]),
+        anchors=anchors,
+        description=description,
+    )
+
+
+@app.get("/gemini-outputs", response_model=List[GeminiOutputOut])
+async def list_gemini_outputs():
+    """Every Gemini answer stored under RECEIVE_DIR, newest batch first."""
+    outputs = []
+    for name in sorted(os.listdir(RECEIVE_DIR), reverse=True):
+        if not os.path.isdir(os.path.join(RECEIVE_DIR, name)):
+            continue
+        output = _read_batch(name)
+        if output is not None:
+            outputs.append(output)
+    return outputs
+
+
+@app.get("/gemini-outputs/{batch}", response_model=GeminiOutputOut)
+async def get_gemini_output(batch: str):
+    # The batch name goes straight into a path, so it may only be a plain
+    # directory name -- never a way out of RECEIVE_DIR.
+    if batch != os.path.basename(batch) or batch in ("", ".", ".."):
+        raise HTTPException(status_code=400, detail=f"invalid batch {batch!r}")
+
+    output = _read_batch(batch)
+    if output is None:
+        raise HTTPException(status_code=404, detail=f"no gemini output for batch {batch!r}")
+    return output
+
+
 # --- companies & categories -------------------------------------------------
 
 @app.get("/categories")
@@ -146,11 +219,18 @@ async def upsert_company(payload: schemas.CompanyIn, db: Session = Depends(get_d
     """Create the company, or update its category if it already exists."""
     company = db.scalar(select(models.Company).where(models.Company.name == payload.name))
     if company is None:
-        company = models.Company(name=payload.name, category=payload.category, details=payload.details)
+        company = models.Company(
+            name=payload.name,
+            category=payload.category,
+            website=payload.website,
+            details=payload.details,
+        )
         db.add(company)
     else:
         if payload.category is not None:
             company.category = payload.category
+        if payload.website is not None:
+            company.website = payload.website
         if payload.details is not None:
             company.details = payload.details
     db.commit()
