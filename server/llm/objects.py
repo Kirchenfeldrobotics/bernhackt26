@@ -8,5 +8,5 @@ __all__ = ["OBJECT_TYPES"]
 class OBJECT_TYPES(str, Enum):
     """Detectable object types."""
 
-    TRASHES = "lixos"
-    TABLES = "Mesas"
+    TRASHES = "Trashes"
+    TABLES = "Tables"
