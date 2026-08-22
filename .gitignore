@@ -1,5 +1,6 @@
 __pycache__/
 venv/
+.venv/
 server/received/
 *.pyc
 node_modules
@@ -44,3 +45,9 @@ crashlytics-build.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# --- server / database ---
+server/data/
+*.db
+.env
+*.env
