@@ -14,7 +14,7 @@ import httpx
 
 # --- what to send -----------------------------------------------------------
 
-API_URL = "https://kirchenfeldrobotics.ch/companies"
+API_URL = "https://bernhackt26.kirchenfeldrobotics.ch/companies"
 
 COMPANY = {
     "name": "3dMike",
