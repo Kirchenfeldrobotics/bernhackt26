@@ -1,0 +1,94 @@
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+/** A row of the `companies` table, as `/companies` returns it. */
+export type Company = {
+  id: number;
+  name: string;
+  category: string | null;
+  website: string | null;
+  details: string | null;
+  created_at: string;
+};
+
+/** One Gemini answer stored on the server by `/receive-data`. */
+export type GeminiOutput = {
+  batch: string;
+  created_at: string;
+  images: number;
+  anchors: number;
+  description: string;
+};
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+export function getCompany(name: string) {
+  return request<Company>(`/companies/${encodeURIComponent(name)}`);
+}
+
+/** Creates the company if it is new, otherwise updates the fields given. */
+export function saveCompany(company: {
+  name: string;
+  website?: string;
+  details?: string;
+}) {
+  return request<Company>("/companies", {
+    method: "POST",
+    body: JSON.stringify(company),
+  });
+}
+
+export function listGeminiOutputs() {
+  return request<GeminiOutput[]>("/gemini-outputs");
+}
+
+export function getGeminiOutput(batch: string) {
+  return request<GeminiOutput>(`/gemini-outputs/${encodeURIComponent(batch)}`);
+}
+
+/** The signed-in company name, kept in the browser -- there are no passwords. */
+const SESSION_KEY = "company-name";
+
+const listeners = new Set<() => void>();
+
+/** Subscribe to the session: other tabs via `storage`, this one via the setters. */
+export function subscribeSession(listener: () => void) {
+  listeners.add(listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
+export function readSession(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(SESSION_KEY);
+}
+
+export function writeSession(name: string) {
+  window.localStorage.setItem(SESSION_KEY, name);
+  listeners.forEach((listener) => listener());
+}
+
+export function clearSession() {
+  window.localStorage.removeItem(SESSION_KEY);
+  listeners.forEach((listener) => listener());
+}
+
+/** Batch timestamps come back as ISO strings; show them readably. */
+export function formatBatchDate(iso: string) {
+  return new Date(iso).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}

@@ -10,6 +10,7 @@ from . import categories
 class CompanyIn(BaseModel):
     name: str
     category: Optional[str] = None
+    website: Optional[str] = None
     details: Optional[str] = None
 
     @field_validator("name")
@@ -45,5 +46,6 @@ class CompanyOut(BaseModel):
     id: int
     name: str
     category: Optional[str]
+    website: Optional[str]
     details: Optional[str]
     created_at: datetime

@@ -19,6 +19,7 @@ class Company(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     category: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
+    website: Mapped[str | None] = mapped_column(String(512), nullable=True, default=None)
     details: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
