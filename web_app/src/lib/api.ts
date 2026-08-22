@@ -86,6 +86,13 @@ export function saveCompany(company: {
   });
 }
 
+export function deleteCompany(name: string) {
+  return request<{ status: string; name: string }>(
+    `/companies/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
+  );
+}
+
 export function listGeminiOutputs() {
   return request<GeminiOutput[]>("/gemini-outputs");
 }
