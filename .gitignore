@@ -2,9 +2,11 @@ __pycache__/
 venv/
 .venv/
 server/received/
+server/.env
 *.pyc
 node_modules
 .env
+
 
 
 # Unity generated — regenerated on Open Project
@@ -52,3 +54,4 @@ server/data/
 .env
 *.env
 graphify-out/
+server/.env
