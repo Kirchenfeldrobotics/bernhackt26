@@ -1,7 +1,6 @@
 @import "tailwindcss";
 
 @theme {
-  /* Colors */
   --color-void: #08090a;
   --color-carbon: #0f1011;
   --color-obsidian: #161718;
@@ -28,7 +27,6 @@
   --font-sans: var(--font-inter-variable);
   --font-mono: var(--font-berkeley-mono);
 
-  /* Typography — Scale */
   --text-caption: 13px;
   --leading-caption: 1.2;
   --text-body-sm: 15px;

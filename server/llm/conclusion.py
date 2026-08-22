@@ -9,12 +9,9 @@ pinned to a spot in the room so the VR app knows where to show it.
     for c in plan["conclusions"]:
         print(c["product_name"], c["position"], c["savings_10y_chf"])
 
-Grounding: verified against the google-genai package actually installed in
-server/.venv (2.19.0) that `google.genai.types` exposes both `GoogleSearch` and
-`Tool`, so live web search grounding is available. The Gemini API does not accept
-a forced-JSON `response_schema` together with a search `tools` grounding call in
-the same request (a documented constraint of the API itself, not this SDK
-version) -- see gemini.generate()'s docstring. So this module makes two calls:
+The Gemini API does not accept a forced-JSON `response_schema` together with a
+search `tools` grounding call in the same request -- see gemini.generate()'s
+docstring. So this module makes two calls:
 
 1. `_research()` -- schema-free, with the search tool switched on, asking Gemini
    to find real, currently purchasable products for the problems at hand and

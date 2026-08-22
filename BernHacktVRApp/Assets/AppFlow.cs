@@ -21,7 +21,7 @@ public class AppFlow : MonoBehaviour
     [Header("Auto-capture")]
     [SerializeField] private float segmentSize = 2.2f;       // ~5m² per cell
     [SerializeField] private float minCaptureDepth = 3.0f;   // meters
-    [SerializeField] private float checkInterval = 0.25f;    // how often the depth probe is refreshed
+    [SerializeField] private float checkInterval = 0.25f;
 
     [Header("Aiming")]
     [Tooltip("Half-angle of the aim ring. The ring's edge sits exactly this far off the target heading.")]
@@ -239,7 +239,6 @@ public class AppFlow : MonoBehaviour
 
         SetState(State.Checking, "Checking for existing room scan...", showButton: false);
 
-        // Try loading WITHOUT triggering setup
         var result = await MRUK.Instance.LoadSceneFromDevice(requestSceneCaptureIfNoDataFound: false);
         Debug.Log($"[AppFlow] Initial load result: {result}");
 
@@ -259,8 +258,6 @@ public class AppFlow : MonoBehaviour
         }
     }
 
-    // Requests one Android permission and waits for the user's answer.
-    // Returns true if granted. No-ops (returns true) off-device.
     async Task<bool> EnsurePermission(string permission, string friendlyName)
     {
         if (Permission.HasUserAuthorizedPermission(permission))
@@ -733,8 +730,8 @@ public class AppFlow : MonoBehaviour
         ringFillImg.fillAmount = fill;
     }
 
-    // Issue 3: says out loud why a check did not result in a capture.
-    // Logs immediately when the reason changes, then at most every 2s while it stays the same.
+    // Says out loud why a check did not result in a capture; logs immediately when the
+    // reason changes, then at most every 2s while it stays the same.
     void CaptureDiag(string msg)
     {
         if (msg != captureHint)
@@ -871,7 +868,7 @@ public class AppFlow : MonoBehaviour
         RenderTexture.ReleaseTemporary(rt);
 
         byte[] jpg = tex.EncodeToJPG(85);
-        capturedFrames.Add(jpg);          // ← new: keep in memory for later POST
+        capturedFrames.Add(jpg);
 
         string path = Path.Combine(Application.persistentDataPath,
             $"capture_{System.DateTime.Now:HHmmss_fff}.jpg");
@@ -891,7 +888,7 @@ public class AppFlow : MonoBehaviour
         if (logUiDiagnostics) LogInfoTextDiagnostics(newState);
     }
 
-    // Issue 2: dump everything that can make a TMP label invisible in a World Space canvas.
+    // Dumps everything that can make a TMP label invisible in a World Space canvas.
     void LogInfoTextDiagnostics(State forState)
     {
         if (infoText == null)
@@ -1136,7 +1133,6 @@ public class AppFlow : MonoBehaviour
 
     async Task SendData()
     {
-        // Build the payload
         MRUKRoom room = MRUK.Instance.GetCurrentRoom();
         if (room == null) throw new System.InvalidOperationException("No current MRUK room to describe.");
 
@@ -1171,7 +1167,6 @@ public class AppFlow : MonoBehaviour
         string json = JsonUtility.ToJson(payload);
         Debug.Log($"[AppFlow] Posting payload: {json.Length} chars, {captures.Length} images");
 
-        // POST it
         string endpoint = $"{apiUrl.TrimEnd('/')}/receive-data";
         using (var req = new UnityWebRequest(endpoint, "POST"))
         {

@@ -58,7 +58,6 @@ os.makedirs(RECEIVE_DIR, exist_ok=True)
 async def root():
     return {"status": "alive"}
 
-# Receive data from vr
 @app.post("/receive-data")
 async def receive_data(payload: Payload):
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
