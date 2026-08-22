@@ -13,6 +13,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import base64
@@ -290,3 +291,34 @@ async def delete_company(name: str, db: Session = Depends(get_db)):
     db.delete(company)
     db.commit()
     return {"status": "deleted", "name": name}
+
+
+# --- accepted solutions -----------------------------------------------------
+
+@app.post("/accept-solution")
+async def accept_solution(payload: schemas.AcceptedSolutionIn, db: Session = Depends(get_db)):
+    """Record a solution the user accepted in VR.
+
+    Accepting the same uuid again is a no-op, so a headset on a flaky link can
+    retry without the second attempt looking like a failure.
+    """
+    if db.get(models.AcceptedSolution, payload.solution_uuid) is None:
+        db.add(models.AcceptedSolution(solution_uuid=payload.solution_uuid))
+        try:
+            db.commit()
+        except IntegrityError:
+            # Another request accepted the same uuid in between. Still fine.
+            db.rollback()
+
+    return {"status": "ok", "solution_uuid": payload.solution_uuid}
+
+
+@app.delete("/delete-solution/{solution_uuid}")
+async def delete_solution(solution_uuid: str, db: Session = Depends(get_db)):
+    """Drop a solution from the accepted list."""
+    accepted = db.get(models.AcceptedSolution, solution_uuid)
+    if accepted is None:
+        raise HTTPException(status_code=404, detail=f"solution {solution_uuid!r} was not accepted")
+    db.delete(accepted)
+    db.commit()
+    return {"status": "deleted", "solution_uuid": solution_uuid}

@@ -68,3 +68,19 @@ class Solution(Base):
 
     def __repr__(self) -> str:
         return f"<Solution {self.title!r} problem_id={self.problem_id}>"
+
+
+class AcceptedSolution(Base):
+    """A solution the user accepted in VR.
+
+    Deliberately just the uuid: the solution's content lives with the pipeline
+    output and gets joined on later, so nothing is duplicated here. The uuid is
+    the primary key, which is what makes accepting the same one twice a no-op.
+    """
+
+    __tablename__ = "accepted_solutions"
+
+    solution_uuid: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+    def __repr__(self) -> str:
+        return f"<AcceptedSolution {self.solution_uuid!r}>"

@@ -49,3 +49,15 @@ class CompanyOut(BaseModel):
     website: Optional[str]
     details: Optional[str]
     created_at: datetime
+
+
+class AcceptedSolutionIn(BaseModel):
+    solution_uuid: str
+
+    @field_validator("solution_uuid")
+    @classmethod
+    def uuid_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("solution_uuid must not be empty")
+        return v
