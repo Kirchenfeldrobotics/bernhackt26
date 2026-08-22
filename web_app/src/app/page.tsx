@@ -58,27 +58,29 @@ export default function StartPage() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-12">
-      <div className="w-full max-w-md rounded-3xl border border-hairline bg-paper p-5 shadow-card">
-        <h1 className="text-heading-sm font-semibold text-ink">Choose your company</h1>
-        <p className="mt-2 text-body text-mid-gray">
+    <div className="flex flex-1 items-center justify-center px-6 py-16">
+      <div className="w-full max-w-[420px] rounded-xl border border-graphite bg-carbon p-6">
+        <h1 className="text-subheading leading-subheading tracking-subheading text-paper">
+          Choose your company
+        </h1>
+        <p className="mt-2 text-body-sm leading-body-sm tracking-body-sm text-fog">
           No password needed. Pick a company, or create a new one.
         </p>
 
         {companies === null ? (
-          <p className="mt-6 text-body text-mid-gray">Loading…</p>
+          <p className="mt-6 text-body-sm leading-body-sm text-ash">Loading…</p>
         ) : companies.length === 0 ? (
-          <p className="mt-6 text-body text-mid-gray">
+          <p className="mt-6 text-body-sm leading-body-sm text-ash">
             No companies yet. Create the first one below.
           </p>
         ) : (
-          <ul className="mt-6 flex max-h-64 flex-col gap-1 overflow-y-auto">
+          <ul className="mt-6 flex max-h-[260px] flex-col gap-1 overflow-y-auto">
             {companies.map((company) => (
               <li key={company.id}>
                 <button
                   type="button"
                   onClick={() => signIn(company.name)}
-                  className="w-full rounded-2xl px-3 py-2 text-left text-body text-ink transition-colors hover:bg-canvas"
+                  className="w-full rounded-md px-3 py-2 text-left text-body-sm leading-body-sm tracking-body-sm text-mist transition-colors hover:bg-white/5 hover:text-paper"
                 >
                   {company.name}
                 </button>
@@ -87,14 +89,14 @@ export default function StartPage() {
           </ul>
         )}
 
-        <div className="my-5 flex items-center gap-3">
-          <span className="h-px flex-1 bg-hairline" />
-          <span className="text-caption uppercase text-mid-gray">or</span>
-          <span className="h-px flex-1 bg-hairline" />
+        <div className="my-6 flex items-center gap-3">
+          <span className="h-px flex-1 bg-graphite" />
+          <span className="text-[12px] leading-[1.4] text-ash">or</span>
+          <span className="h-px flex-1 bg-graphite" />
         </div>
 
         <form onSubmit={handleCreate} className="flex flex-col gap-2">
-          <label htmlFor="name" className="text-caption font-medium uppercase text-mid-gray">
+          <label htmlFor="name" className="text-[12px] leading-[1.4] text-fog">
             New company
           </label>
           <div className="flex gap-2">
@@ -105,19 +107,22 @@ export default function StartPage() {
               onChange={(event) => setName(event.target.value)}
               required
               placeholder="Beispiel AG"
-              className="min-w-0 flex-1 rounded-2xl bg-canvas px-3 py-2 text-body text-ink placeholder:text-mid-gray outline-none focus:ring-1 focus:ring-hairline"
+              className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-white/[0.02] px-3.5 py-3 text-[14px] leading-[1.4] text-mist placeholder:text-ash outline-none transition-colors focus:border-mist"
             />
+            {/* The one chromatic element on this view. */}
             <button
               type="submit"
               disabled={busy || name.trim() === ""}
-              className="shrink-0 rounded-2xl bg-ink px-4 py-2 text-body font-medium text-surface-alt transition-opacity disabled:opacity-40"
+              className="shrink-0 rounded-md bg-acid-lime px-4 py-2.5 text-[14px] font-[510] tracking-[-0.011em] text-void transition-opacity disabled:opacity-40"
             >
               {busy ? "Creating…" : "Create"}
             </button>
           </div>
         </form>
 
-        {error !== null && <p className="mt-4 text-body text-ember">{error}</p>}
+        {error !== null && (
+          <p className="mt-4 text-body-sm leading-body-sm text-coral-red">{error}</p>
+        )}
       </div>
     </div>
   );
