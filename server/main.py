@@ -1,27 +1,15 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List, Optional
 import base64
+import json
 import os
 from datetime import datetime
+
+from roomDescription import Anchor, Room, Payload, describe_room
 
 app = FastAPI()
 
 RECEIVE_DIR = "/var/www/bernhackt26/received"
 os.makedirs(RECEIVE_DIR, exist_ok=True)
-
-class Anchor(BaseModel):
-    label: str
-    position: List[float]
-    rotation: List[float]
-    size: Optional[List[float]] = None
-
-class Room(BaseModel):
-    anchors: List[Anchor]
-
-class Payload(BaseModel):
-    room: Room
-    captures: List[str]
 
 @app.get("/")
 async def root():
@@ -40,5 +28,14 @@ async def receive_data(payload: Payload):
     with open(f"{batch_dir}/room.json", "w") as f:
         f.write(payload.room.model_dump_json(indent=2))
 
+    description = describe_room(payload.room, payload.captures, batch_dir)
+    with open(f"{batch_dir}/description.json", "w") as f:
+        json.dump(description, f, indent=2)
+
     print(f"[{stamp}] {len(payload.room.anchors)} anchors, {len(payload.captures)} images saved to {batch_dir}")
-    return {"status": "ok", "batch": stamp, "received_images": len(payload.captures)}
+    return {
+        "status": "ok",
+        "batch": stamp,
+        "received_images": len(payload.captures),
+        "description": description,
+    }

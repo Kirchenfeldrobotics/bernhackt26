@@ -3,6 +3,7 @@ venv/
 server/received/
 *.pyc
 node_modules
+.env
 
 
 # Unity generated — regenerated on Open Project
