@@ -28,10 +28,6 @@ class Payload(BaseModel):
 
 
 def describe_room(room: Room, captures: List[str], batch_dir: str) -> dict:
-    """Receive the room scan data from /receive-data and ask Gemini to
-    describe it. Minimal skeleton: init the client, build a basic prompt,
-    call generate_content, return the response text.
-    """
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
     prompt = (
