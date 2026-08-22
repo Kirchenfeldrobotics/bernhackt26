@@ -1,8 +1,9 @@
 """ORM models."""
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import JSON, DateTime, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column
 
 from .session import Base
 
@@ -27,44 +28,30 @@ class Company(Base):
         return f"<Company {self.name!r} category={self.category!r}>"
 
 
-class Problem(Base):
-    """One problem found in a company's office during one scan batch.
+class Conclusion(Base):
+    """One problem found in a company's office, plus every solution proposed for it.
 
-    No FK to Company: a problem can be recorded before a matching company row
-    exists, so company_name is kept as a plain string, same as
+    No FK to Company: a conclusion can be recorded before a matching company
+    row exists, so company_name is kept as a plain string, same as
     determine_problems() already takes it.
     """
 
-    __tablename__ = "problems"
+    __tablename__ = "conclusions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     company_name: Mapped[str] = mapped_column(String(255), index=True)
     batch: Mapped[str] = mapped_column(String(64), index=True)
-    description: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(String(255))
+    problem: Mapped[str] = mapped_column(Text)
+    # List of {"id", "name", "url", "description"} dicts -- no separate
+    # solutions table, so "id" here is just a stable identifier within this
+    # list, not a DB primary key.
+    solutions: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    savings_10y_chf: Mapped[str] = mapped_column(Text)
+    # {"label": ..., "position": {"x": ..., "y": ..., "z": ...}}
+    anchor: Mapped[dict[str, Any]] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(32), default="in_progress")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    solutions: Mapped[list["Solution"]] = relationship(
-        back_populates="problem", cascade="all, delete-orphan"
-    )
-
     def __repr__(self) -> str:
-        return f"<Problem {self.id} company={self.company_name!r} batch={self.batch!r}>"
-
-
-class Solution(Base):
-    """One product/service recommendation Gemini gave to fix a Problem."""
-
-    __tablename__ = "solutions"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    problem_id: Mapped[int] = mapped_column(ForeignKey("problems.id"), index=True)
-    title: Mapped[str] = mapped_column(String(255))
-    explanation: Mapped[str] = mapped_column(Text)
-    url: Mapped[str | None] = mapped_column(String(512), nullable=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    problem: Mapped["Problem"] = relationship(back_populates="solutions")
-
-    def __repr__(self) -> str:
-        return f"<Solution {self.title!r} problem_id={self.problem_id}>"
+        return f"<Conclusion {self.id} company={self.company_name!r} batch={self.batch!r}>"

@@ -7,7 +7,7 @@ pinned to a spot in the room so the VR app knows where to show it.
 
     plan = await conclusion(payload.room.model_dump(), problems)
     for c in plan["conclusions"]:
-        print(c["product_name"], c["position"], c["savings_10y_chf"])
+        print(c["title"], c["anchor"]["position"], c["savings_10y_chf"])
 
 The Gemini API does not accept a forced-JSON `response_schema` together with a
 search `tools` grounding call in the same request -- see gemini.generate()'s
@@ -44,52 +44,63 @@ class Position(BaseModel):
     z: float
 
 
-class Conclusion(BaseModel):
-    """One green fix, ready to be shown on a panel in the VR app.
+class Solution(BaseModel):
+    """One fix for a problem -- usually a real product, sometimes a written one."""
 
-    Field order is deliberate: Gemini fills a JSON schema top to bottom, so the
-    reasoning (which problem, which product, why it fits) is settled before it
-    commits to a number and a place.
-    """
-
-    problem: str = Field(
-        description="Which problem from the list above this addresses, copied or "
-        "closely paraphrased so it stays traceable back to it."
+    name: str = Field(
+        description="Name of the real product or service, or, for a written/behavioural "
+        "fix with no product behind it, a short description of the fix itself."
     )
-    solution: str = Field(
-        description="How the product below fixes that problem, one or two sentences."
-    )
-    title: str = Field(description="Short, concrete name of the fix. At most six words.")
-    product_name: str = Field(description="Name of the real product or service being recommended.")
-    product_details: str = Field(
-        description="What it is, how it would be used in this room, and why it fits -- a "
-        "few concrete sentences, not marketing copy."
-    )
-    product_url: Optional[str] = Field(
+    url: Optional[str] = Field(
         default=None,
         description="A source link for the product, if the research below found one. "
-        "Leave unset rather than guessing one.",
+        "Leave unset rather than guessing one. Written/behavioural solutions always "
+        "leave this unset.",
     )
-    bullets: list[str] = Field(
-        description="Two to four punchy bullet points describing the solution. "
-        "At most ten words each, concrete and satisfying to read, no filler."
+    description: str = Field(
+        description="How this fixes the problem -- a few concrete sentences, not "
+        "marketing copy."
     )
-    savings_10y_chf: float = Field(
-        description="Money saved or earned over the next ten years in Swiss francs, "
-        "cumulative and positive."
-    )
-    savings_basis: str = Field(
-        description="The assumption behind that number, in one line, so it can be checked."
-    )
-    anchor_label: str = Field(
-        description="Label of the MRUK anchor this solution belongs to. Must be one "
-        "of the labels given in the anchor list."
+
+
+class Anchor(BaseModel):
+    """Where in the room a conclusion's explanation panel belongs."""
+
+    label: str = Field(
+        description="Label of the MRUK anchor this belongs to. Must be one of the "
+        "labels given in the anchor list."
     )
     position: Position = Field(
         description="Where the explanation panel floats, in the anchors' coordinate space."
     )
-    placement_reasoning: str = Field(
-        description="One line on why the panel goes there, referring to the anchor used."
+
+
+class Conclusion(BaseModel):
+    """One problem and every fix found for it, ready to be shown on a panel in the VR app.
+
+    Field order is deliberate: Gemini fills a JSON schema top to bottom, so the
+    reasoning (which problem, which products, why they fit) is settled before it
+    commits to a number and a place.
+    """
+
+    title: str = Field(description="Short, concrete name of the fix. At most six words.")
+    problem: str = Field(
+        description="The problem, phrased to include the negative impact it has on the "
+        "room or workspace -- not just what's wrong, but what it costs or harms "
+        "(comfort, energy, health, productivity, etc)."
+    )
+    solutions: list[Solution] = Field(
+        description="One or more fixes for this problem. Prefer real, currently "
+        "purchasable products for most of them; a written/behavioural fix is fine "
+        "when that suits the problem better."
+    )
+    savings_10y_chf: str = Field(
+        description="Formatted exactly as '|amount|explanation': a pipe, the CHF amount "
+        "saved over ten years, another pipe, then a one-line explanation of why that "
+        "much is saved, with no separator before it."
+    )
+    anchor: Anchor = Field(
+        description="Which MRUK anchor this belongs near, and where the panel floats."
     )
 
 
@@ -123,8 +134,8 @@ things that can be bought, brought in, swapped, switched off, unplugged,
 rearranged or added by the people who work there. Nothing that needs renovation,
 moving building, or changing the business.
 
-For up to {max_conclusions} of the most worthwhile problems, find one concrete,
-real product or service each and report:
+For up to {max_conclusions} of the most worthwhile problems, find one or more
+concrete fixes each and report:
 
 - which problem it addresses
 - its real name, and a source URL if you found one
@@ -132,9 +143,15 @@ real product or service each and report:
 - a realistic ten-year CHF saving estimate and the one-line assumption behind it
 - which anchor in the list above it belongs near
 
+Prefer real, currently purchasable products for most fixes. Where a written or
+behavioural change fits a problem better than any product (e.g. "turn off idle
+monitors"), report that instead rather than forcing a product onto it. A single
+problem can have more than one worthwhile fix -- report each one you find.
+
 Prefer cheap, fast, obviously worthwhile changes over ambitious projects. Merge
-duplicates -- one product per distinct fix. If a problem does not support a real,
-findable product, say so plainly and skip it rather than inventing one.
+duplicates -- one fix per distinct idea. If a problem does not support a real,
+findable product, say so plainly and offer a written fix instead rather than
+inventing a product.
 
 Write your findings as plain text, one product per paragraph. This is
 intermediate research for another step to structure, not the final answer, so
@@ -167,12 +184,17 @@ the room you have.
 Work out, for the problems above, the concrete fixes that are actually easy to
 realise:
 
-- Each conclusion must address at least one of the problems listed above. Do not
-  invent new problems.
-- Ground each conclusion in the research above where it found a real, fitting
-  product. Where the research did not turn up a good match for a problem worth
-  fixing, use your own knowledge of a real product instead rather than skipping
-  it, but never invent a URL -- leave `product_url` unset if you don't have one.
+- Each conclusion must address exactly one of the problems listed above. Do not
+  invent new problems. A problem may get more than one conclusion object only if
+  its fixes genuinely don't belong on the same panel -- normally, group every
+  fix for one problem into that one conclusion's `solutions` list instead.
+- Give each conclusion one or more solutions. Prefer real, currently purchasable
+  products, grounded in the research above where it found a good match. Where
+  neither the research nor your own knowledge has a real product for a problem
+  worth fixing, give a written/behavioural solution instead (e.g. "turn off idle
+  monitors") rather than inventing a product. Never invent a URL -- leave a
+  solution's `url` unset if you don't have one; written/behavioural solutions
+  always leave it unset.
 - Only things that can be done inside this room: bought, brought in, swapped,
   switched off, unplugged, rearranged or added by the people who work there.
   Nothing that needs renovation, moving building, or changing the business.
@@ -181,31 +203,36 @@ realise:
   relates to, and place the explanation panel just in front of or above that
   anchor -- somewhere a person standing in the room could read it. Never place a
   panel inside a wall, inside furniture, at floor level, or far from any anchor.
-- Merge duplicates. One panel per distinct fix, at most {max_conclusions}, most
-  worthwhile first.
+- Merge duplicates. One conclusion per distinct problem, at most
+  {max_conclusions}, most worthwhile first.
 
 ## Step 2 -- answer
 
 Return only JSON in the required schema, filled in as follows:
 
-- `problem`: the problem this fixes, copied or closely paraphrased from above.
-- `solution`: one or two sentences on how the product fixes it.
 - `title`: the fix, named in at most six words.
-- `product_name`: the real product or service's name.
-- `product_details`: what it is, how it's used here, and why it fits -- concrete,
-  not marketing copy.
-- `product_url`: a source link, only if the research above gave you one.
-- `bullets`: two to four bullets, at most ten words each. Punchy and rewarding
-  to read: concrete actions and numbers, present tense, no filler words, no
-  full sentences. This is the text a person sees first in VR.
-- `savings_10y_chf`: money saved or earned over ten years, in Swiss francs, as a
-  positive number. Be realistic for an office of this size -- a plausible small
-  number beats an impressive invented one.
-- `savings_basis`: the one-line assumption your number rests on.
-- `anchor_label`: copy one label exactly as written in the anchor list above.
-- `position`: x, y, z in metres, in the same coordinate space as the anchors,
-  near the anchor you named.
-- `placement_reasoning`: one line on why the panel goes exactly there.
+- `problem`: the problem this fixes, phrased to include the negative impact it
+  has on the room or workspace -- not just what's wrong, but what it costs or
+  harms (comfort, energy, health, productivity, etc), copied or closely
+  paraphrased from above.
+- `solutions`: a list of one or more fixes for this problem, each with:
+  - `name`: the real product or service's name, or, for a written/behavioural
+    fix, a short description of the fix itself.
+  - `url`: a source link, only if the research above gave you one for that
+    product; unset for written/behavioural fixes.
+  - `description`: how it fixes the problem -- a few concrete sentences, not
+    marketing copy.
+- `savings_10y_chf`: formatted exactly as `|amount|explanation` -- a pipe,
+  the CHF amount saved over ten years as a positive number, another pipe, then
+  a one-line explanation of why that much is saved, directly after with no
+  separator. Be realistic for an office of this size -- a plausible small
+  number beats an impressive invented one. Example:
+  `|1200|Switching to LED bulbs cuts lighting electricity use by roughly 70%,
+  saving an estimated 1200 CHF over ten years.`
+- `anchor`: where the panel belongs --
+  - `label`: copy one label exactly as written in the anchor list above.
+  - `position`: x, y, z in metres, in the same coordinate space as the
+    anchors, near the anchor you named.
 
 Every conclusion must be grounded in the problems and the anchors given. If the
 problems support fewer than {max_conclusions} good conclusions, return fewer.

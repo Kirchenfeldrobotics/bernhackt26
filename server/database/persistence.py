@@ -1,41 +1,31 @@
-"""Persisting a conclusion() plan into Problem/Solution rows."""
-from sqlalchemy import select
+"""Persisting a conclusion() plan into Conclusion rows."""
 from sqlalchemy.orm import Session
 
 from . import models
 
 
 def save_plan(plan: dict, company_name: str, batch: str, db: Session) -> None:
-    """Store one batch's conclusions, grouping same-text problems into one row.
+    """Store one batch's conclusions, one row per plan item.
 
-    `plan` is the dict conclusion() returns: {"conclusions": [...]}. Conclusions
-    that share the exact same `problem` text within this batch become one
-    Problem with several Solutions, rather than one Problem each.
+    `plan` is the dict conclusion() returns: {"conclusions": [...]}. Each item
+    already groups a problem with its full list of solutions, so this is a
+    direct 1:1 mapping from plan item to DB row -- each solution just gains a
+    sequential `id` within the row's `solutions` list.
     """
-    conclusions = plan.get("conclusions", [])
-    problems_by_text: dict[str, models.Problem] = {}
-
-    for c in conclusions:
-        text = c["problem"]
-        problem = problems_by_text.get(text)
-        if problem is None:
-            problem = db.scalar(
-                select(models.Problem).where(
-                    models.Problem.company_name == company_name,
-                    models.Problem.batch == batch,
-                    models.Problem.description == text,
-                )
-            )
-        if problem is None:
-            problem = models.Problem(company_name=company_name, batch=batch, description=text)
-            db.add(problem)
-        problems_by_text[text] = problem
-
-        problem.solutions.append(
-            models.Solution(
+    for c in plan.get("conclusions", []):
+        solutions = [
+            {**solution, "id": i}
+            for i, solution in enumerate(c["solutions"], start=1)
+        ]
+        db.add(
+            models.Conclusion(
+                company_name=company_name,
+                batch=batch,
                 title=c["title"],
-                explanation=c["solution"],
-                url=c.get("product_url"),
+                problem=c["problem"],
+                solutions=solutions,
+                savings_10y_chf=c["savings_10y_chf"],
+                anchor=c["anchor"],
             )
         )
 
