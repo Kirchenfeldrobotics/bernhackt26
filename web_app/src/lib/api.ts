@@ -1,4 +1,7 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// The deployed server. Point NEXT_PUBLIC_API_URL at http://localhost:8000 in
+// .env.local to develop against a local one instead.
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "https://bernhackt26.kirchenfeldrobotics.ch";
 
 /** A row of the `companies` table, as `/companies` returns it. */
 export type Company = {
