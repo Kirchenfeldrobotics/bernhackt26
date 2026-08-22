@@ -31,7 +31,7 @@ IMAGES = [
     os.path.join(HERE, "img_01.jpg"),
 ]
 
-# describe_room() calls Gemini before answering, so this is not quick.
+# describe_room() calls the model before answering, so this is not quick.
 TIMEOUT = 300
 
 # --- go ---------------------------------------------------------------------

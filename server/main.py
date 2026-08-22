@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 
 # Must run before the imports below: they read their configuration (DATABASE_URL,
-# RECEIVE_DIR, GEMINI_API_KEY) on import. Variables already in the real
+# RECEIVE_DIR, LLM_API_KEY) on import. Variables already in the real
 # environment win over the file.
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
@@ -19,7 +19,7 @@ import base64
 import json
 from datetime import datetime
 
-import llm.gemini as gemini
+import llm.llm as llm
 from llm.roomDescription import Anchor, Room, Payload, describe_room
 from llm.determine_problems import determine_problems, CompanyNotFound
 from llm.conclusion import conclusion
@@ -85,9 +85,9 @@ async def receive_data(payload: Payload):
         raise HTTPException(status_code=400, detail=str(exc))
     except CompanyNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    except gemini.GeminiNotConfigured as exc:
+    except llm.LLMNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc))
-    except gemini.GeminiError as exc:
+    except llm.LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
     with open(f"{batch_dir}/problems.txt", "w") as f:
@@ -111,7 +111,7 @@ class GeminiRequest(BaseModel):
     prompt: str
     # Raw base64 JPEGs, same encoding the VR app posts to /receive-data.
     images: List[str] = []
-    # Overrides GEMINI_MODEL / the default model for this one request.
+    # Overrides LLM_MODEL / the default model for this one request.
     model: Optional[str] = None
 
     @field_validator("prompt")
@@ -125,17 +125,17 @@ class GeminiRequest(BaseModel):
 
 @app.post("/send-to-gemini")
 async def send_to_gemini(payload: GeminiRequest):
-    """Send a prompt and any attached images to Gemini and return its answer."""
+    """Send a prompt and any attached images to the model and return its answer."""
     try:
-        output = await gemini.generate(payload.prompt, payload.images, payload.model)
+        output = await llm.generate(payload.prompt, payload.images, payload.model)
     except ValueError as exc:  # undecodable image: the caller's problem
         raise HTTPException(status_code=400, detail=str(exc))
-    except gemini.GeminiNotConfigured as exc:
+    except llm.LLMNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc))
-    except gemini.GeminiError as exc:
+    except llm.LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
-    print(f"[gemini] prompt {len(payload.prompt)} chars, {len(payload.images)} images -> {len(output)} chars")
+    print(f"[llm] prompt {len(payload.prompt)} chars, {len(payload.images)} images -> {len(output)} chars")
     return {"status": "ok", "output": output}
 
 
@@ -147,7 +147,7 @@ BATCH_STAMP_FORMAT = "%Y%m%d_%H%M%S"
 
 
 class GeminiOutputOut(BaseModel):
-    """One Gemini answer that /receive-data already stored on disk."""
+    """One model answer that /receive-data already stored on disk."""
 
     batch: str
     created_at: datetime
@@ -157,7 +157,7 @@ class GeminiOutputOut(BaseModel):
 
 
 def _read_batch(batch: str) -> Optional[GeminiOutputOut]:
-    """Load one stored batch, or None if it holds no Gemini output (yet)."""
+    """Load one stored batch, or None if it holds no model output (yet)."""
     batch_dir = os.path.join(RECEIVE_DIR, batch)
     description_path = os.path.join(batch_dir, "description.json")
     if not os.path.isfile(description_path):
@@ -188,7 +188,7 @@ def _read_batch(batch: str) -> Optional[GeminiOutputOut]:
 
 @app.get("/gemini-outputs", response_model=List[GeminiOutputOut])
 async def list_gemini_outputs():
-    """Every Gemini answer stored under RECEIVE_DIR, newest batch first."""
+    """Every model answer stored under RECEIVE_DIR, newest batch first."""
     outputs = []
     for name in sorted(os.listdir(RECEIVE_DIR), reverse=True):
         if not os.path.isdir(os.path.join(RECEIVE_DIR, name)):

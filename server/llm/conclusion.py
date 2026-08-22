@@ -2,23 +2,21 @@
 conclusions.
 
 Takes the problem list determine_problems() produced plus the MRUK anchors the
-Meta Quest scanned, and asks Gemini for concrete, real-product fixes -- each one
+Meta Quest scanned, and asks the model for concrete, real-product fixes -- each one
 pinned to a spot in the room so the VR app knows where to show it.
 
     plan = await conclusion(payload.room.model_dump(), problems)
     for c in plan["conclusions"]:
         print(c["product_name"], c["position"], c["savings_10y_chf"])
 
-Grounding: verified against the google-genai package actually installed in
-server/.venv (2.19.0) that `google.genai.types` exposes both `GoogleSearch` and
-`Tool`, so live web search grounding is available. The Gemini API does not accept
-a forced-JSON `response_schema` together with a search `tools` grounding call in
-the same request (a documented constraint of the API itself, not this SDK
-version) -- see gemini.generate()'s docstring. So this module makes two calls:
+Grounding: none. Live web search was a provider-specific feature of the old
+Gemini SDK and has no equivalent in the OpenAI chat-completions API, so
+`_research()` now runs on the model's own knowledge. The two-call structure is
+kept so real search can be reattached per provider later:
 
-1. `_research()` -- schema-free, with the search tool switched on, asking Gemini
-   to find real, currently purchasable products for the problems at hand and
-   report what it found as plain text, including any source URLs.
+1. `_research()` -- schema-free, asking the model for real, currently
+   purchasable products for the problems at hand, reported as plain text and
+   including a source URL only where it is genuinely sure of one.
 2. `conclusion()`'s main call -- schema-constrained, no tools, that folds that
    research text (plus the problems and anchors) into the final ConclusionPlan.
 
@@ -29,14 +27,11 @@ import json
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
-from google.genai import types
 
-import llm.gemini as gemini
+import llm.llm as llm
 
 # Keeps one runaway answer from filling the room with panels.
 MAX_CONCLUSIONS = 8
-
-SEARCH_TOOLS = [types.Tool(google_search=types.GoogleSearch())]
 
 
 class Position(BaseModel):
@@ -50,7 +45,7 @@ class Position(BaseModel):
 class Conclusion(BaseModel):
     """One green fix, ready to be shown on a panel in the VR app.
 
-    Field order is deliberate: Gemini fills a JSON schema top to bottom, so the
+    Field order is deliberate: the model fills a JSON schema top to bottom, so the
     reasoning (which problem, which product, why it fits) is settled before it
     commits to a number and a place.
     """
@@ -265,13 +260,12 @@ async def conclusion(anchors_json: Any, problems: str) -> dict:
     `anchors_json` is the MRUK anchor data from the headset (JSON text, a dict, a
     list or a Room model); `problems` is the text determine_problems() returned.
 
-    Makes two Gemini calls -- an ungrounded search-tool call to research real
-    products, then a schema-constrained call with no tools that structures the
-    result -- because the Gemini API does not allow combining the two in one
-    request (see the module docstring).
+    Makes two model calls -- one to research real products, then a
+    schema-constrained call that structures the result (see the module
+    docstring).
 
     Returns {"conclusions": [...]}, already parsed and validated against the
-    schema. Raises ValueError on unusable input and gemini.GeminiError if either
+    schema. Raises ValueError on unusable input and llm.LLMError if either
     call cannot be reached or the final one answers with something the schema
     rejects.
     """
@@ -286,7 +280,7 @@ async def conclusion(anchors_json: Any, problems: str) -> dict:
         anchors_json=anchors_text,
         max_conclusions=MAX_CONCLUSIONS,
     )
-    research = await gemini.generate(research_prompt, tools=SEARCH_TOOLS)
+    research = await llm.generate(research_prompt)
 
     prompt = PROMPT_TEMPLATE.format(
         problems=problems,
@@ -297,12 +291,12 @@ async def conclusion(anchors_json: Any, problems: str) -> dict:
 
     # The schema is enforced while the answer is decoded, so the two steps above
     # happen in the model's thinking and only the JSON comes back.
-    data = await gemini.generate_json(prompt, ConclusionPlan)
+    data = await llm.generate_json(prompt, ConclusionPlan)
 
     try:
         plan = ConclusionPlan.model_validate(data)
     except ValueError as exc:
-        raise gemini.GeminiError(f"Gemini's JSON did not fit the schema: {exc}") from exc
+        raise llm.LLMError(f"the model's JSON did not fit the schema: {exc}") from exc
 
     print(f"[conclusion] {anchor_count} anchors, {len(problems)} chars of problems, "
           f"{len(research)} chars researched -> {len(plan.conclusions)} conclusions")

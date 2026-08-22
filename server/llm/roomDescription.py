@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List, Optional
 
-import llm.gemini as gemini
+import llm.llm as llm
 from llm.objects import OBJECT_TYPES as Object
 
 load_dotenv()
@@ -18,7 +18,7 @@ class Anchor(BaseModel):
 
 
 class DescribedAnchor(Anchor):
-    """An Anchor plus what Gemini made of it (or of something it found on its own)."""
+    """An Anchor plus what the model made of it (or of something it found on its own)."""
 
     details: str
 
@@ -28,7 +28,7 @@ class Room(BaseModel):
 
 
 class RoomDescription(BaseModel):
-    """Every anchor Gemini was given, plus anything further it found in the images."""
+    """Every anchor the model was given, plus anything further it found in the images."""
 
     anchors: List[DescribedAnchor]
 
@@ -57,11 +57,11 @@ async def describe_room(room: Room, captures: List[str], batch_dir: str) -> dict
         - Position and rotation stay in Meters, in the same coordinate space as the anchors above."""
     )
 
-    data = await gemini.generate_json(prompt, RoomDescription, images=captures)
+    data = await llm.generate_json(prompt, RoomDescription, images=captures)
     try:
         description = RoomDescription.model_validate(data)
     except ValueError as exc:
-        raise gemini.GeminiError(f"Gemini's JSON did not fit the schema: {exc}") from exc
+        raise llm.LLMError(f"the model's JSON did not fit the schema: {exc}") from exc
 
     print(f"[describe-room] {len(room.anchors)} input anchors, {len(captures)} images "
           f"-> {len(description.anchors)} anchors in description")

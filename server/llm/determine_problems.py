@@ -1,14 +1,14 @@
 """Step 1 of the analysis pipeline: name the sustainability problems in a room.
 
 Takes a room description plus a company name, looks the company's business
-description up in the database, and asks Gemini what is wrong. Deliberately
+description up in the database, and asks the model what is wrong. Deliberately
 problems only -- a later prompt turns this output into solutions.
 
     problems = await determine_problems(room_description, "Beispiel AG")
 """
 from sqlalchemy import select
 
-import llm.gemini as gemini
+import llm.llm as llm
 from database import SessionLocal, models
 from llm.objects import OBJECT_TYPES as Object
 
@@ -16,7 +16,7 @@ from llm.objects import OBJECT_TYPES as Object
 # prompt never contains a dangling "None".
 UNKNOWN = "(not available)"
 
-# Rendered once into the prompt so Gemini knows which objects a later stage can
+# Rendered once into the prompt so the model knows which objects a later stage can
 # actually place a fix against, without being told every problem must use one.
 KNOWN_OBJECT_TYPES = ", ".join(o.value for o in Object)
 
@@ -102,10 +102,10 @@ async def determine_problems(room_description: str, company_name: str) -> str:
     """Find the sustainability problems in a company's office space.
 
     Reads the company's business description from the database itself, so the
-    caller only needs the two strings. Returns Gemini's problem list.
+    caller only needs the two strings. Returns the model's problem list.
 
     Raises ValueError on empty input, CompanyNotFound if the name is unknown,
-    and gemini.GeminiError if the model cannot be reached or says nothing.
+    and llm.LLMError if the model cannot be reached or says nothing.
     """
     room_description = room_description.strip()
     company_name = company_name.strip()
@@ -115,14 +115,14 @@ async def determine_problems(room_description: str, company_name: str) -> str:
         raise ValueError("company_name must not be empty")
 
     # The prompt is built inside the session and the call made outside it, so no
-    # database connection is held open across the slow request to Gemini.
+    # database connection is held open across the slow request to the model.
     with SessionLocal() as db:
         company = db.scalar(select(models.Company).where(models.Company.name == company_name))
         if company is None:
             raise CompanyNotFound(f"no company named {company_name!r}")
         prompt = build_prompt(room_description, company)
 
-    output = await gemini.generate(prompt)
+    output = await llm.generate(prompt)
 
     print(f"[determine-problems] {company_name}: {len(prompt)} chars in -> {len(output)} chars out")
     return output
