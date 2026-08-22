@@ -4,7 +4,7 @@ Typical use from the app:
 
     from database import get_db, init_db, models, schemas
 """
-from . import categories, models, schemas
+from . import categories, models, persistence, schemas
 from .session import Base, SessionLocal, engine, get_db, init_db
 
 __all__ = [
@@ -15,5 +15,6 @@ __all__ = [
     "get_db",
     "init_db",
     "models",
+    "persistence",
     "schemas",
 ]
