@@ -16,37 +16,45 @@ function OutputList() {
       .catch((cause) => setError(String(cause instanceof Error ? cause.message : cause)));
   }, []);
 
-  if (error !== null) return <p className="text-body text-ember">{error}</p>;
-  if (outputs === null) return <p className="text-body text-mid-gray">Loading…</p>;
+  if (error !== null)
+    return <p className="text-body-sm leading-body-sm text-coral-red">{error}</p>;
+  if (outputs === null)
+    return <p className="text-body-sm leading-body-sm text-ash">Loading…</p>;
 
   return (
     <div>
-      <h1 className="text-heading font-semibold text-ink">Gemini outputs</h1>
-      <p className="mt-2 text-body text-mid-gray">
+      <h1 className="text-heading-sm leading-heading-sm tracking-heading-sm text-paper">
+        Gemini outputs
+      </h1>
+      <p className="mt-3 text-body-sm leading-body-sm tracking-body-sm text-fog">
         {outputs.length === 0
           ? "No scans have been sent from the headset yet."
           : `${outputs.length} scan${outputs.length === 1 ? "" : "s"} stored on the server.`}
       </p>
 
-      <ul className="mt-6 flex flex-col gap-3">
+      <ul className="mt-8 flex flex-col gap-2">
         {outputs.map((output) => (
           <li key={output.batch}>
             <Link
               href={`/outputs/${output.batch}`}
-              className="block rounded-3xl border border-hairline bg-paper p-5 shadow-card transition-colors hover:border-mid-gray"
+              className="block rounded-xl border border-graphite bg-carbon p-6 transition-colors hover:border-smoke"
             >
-              <div className="flex flex-wrap items-baseline gap-3">
-                <span className="text-body-lg font-medium text-ink">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-body-lg leading-body-lg tracking-body-lg text-paper">
                   {formatBatchDate(output.created_at)}
                 </span>
-                <span className="rounded-2xl bg-canvas px-2 py-0.5 font-mono text-caption text-ink-soft">
+                {/* Batch stamps are technical metadata: monospaced, like an issue ID. */}
+                <span className="rounded-[4px] bg-white/5 px-1.5 font-mono text-[12px] leading-[1.4] tracking-[-0.013em] text-fog">
                   {output.batch}
                 </span>
-                <span className="text-caption text-mid-gray">
-                  {output.images} images · {output.anchors} anchors
+                <span className="rounded-[4px] bg-white/5 px-1.5 text-[12px] leading-[1.4] text-fog">
+                  {output.images} images
+                </span>
+                <span className="rounded-[4px] bg-white/5 px-1.5 text-[12px] leading-[1.4] text-fog">
+                  {output.anchors} anchors
                 </span>
               </div>
-              <p className="mt-2 line-clamp-2 text-body text-mid-gray">
+              <p className="mt-3 line-clamp-2 text-body-sm leading-body-sm tracking-body-sm text-ash">
                 {output.description}
               </p>
             </Link>

@@ -50,34 +50,43 @@ export default function AppShell({
 
   return (
     <div className="flex flex-1 flex-col">
-      <header className="border-b border-hairline bg-surface-alt">
-        <div className="mx-auto flex w-full max-w-[1280px] items-center gap-6 px-6 py-4">
-          <span className="text-body font-medium text-ink">{company}</span>
+      <header className="border-b border-graphite">
+        <div className="mx-auto flex w-full max-w-[1200px] items-center gap-8 px-6 py-4">
+          <span className="text-[16px] font-[510] tracking-[-0.01em] text-paper">
+            {company}
+          </span>
+
           <nav className="flex items-center gap-1">
-            {NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`rounded-2xl px-3 py-1.5 text-body transition-colors ${
-                  pathname === item.href || pathname.startsWith(`${item.href}/`)
-                    ? "bg-canvas font-medium text-ink"
-                    : "text-mid-gray hover:text-ink"
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {NAV.map((item) => {
+              const active =
+                pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`rounded-md px-3 py-2 text-caption leading-caption transition-colors ${
+                    active
+                      ? "bg-white/5 text-paper"
+                      : "text-mist hover:bg-white/[0.03] hover:text-paper"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
+
           <button
             type="button"
             onClick={signOut}
-            className="ml-auto rounded-2xl px-3 py-1.5 text-body text-mid-gray transition-colors hover:text-ink"
+            className="ml-auto rounded-md px-3 py-2 text-caption leading-caption text-fog transition-colors hover:text-mist"
           >
             Sign out
           </button>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[1280px] flex-1 px-6 py-12">
+
+      <main className="mx-auto w-full max-w-[1200px] flex-1 px-6 py-16">
         {children(company)}
       </main>
     </div>
