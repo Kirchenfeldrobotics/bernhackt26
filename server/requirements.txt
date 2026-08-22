@@ -4,3 +4,4 @@ pydantic
 anthropic
 pillow
 python-multipart
+sqlalchemy
