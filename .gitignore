@@ -52,3 +52,4 @@ server/data/
 *.db
 .env
 *.env
+server/.env

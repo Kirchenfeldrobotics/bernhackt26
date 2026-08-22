@@ -77,6 +77,10 @@ async def receive_data(payload: Payload):
     # Kick off agent pipline
 
 
+    
+
+    # Send data back to vr 
+
     return {"status": "ok", "batch": stamp, "received_images": len(payload.captures)}
 
 
