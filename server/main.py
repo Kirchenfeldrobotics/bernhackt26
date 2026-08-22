@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,6 +20,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 RECEIVE_DIR = "/var/www/bernhackt26/received"
 os.makedirs(RECEIVE_DIR, exist_ok=True)
@@ -92,10 +100,13 @@ async def upsert_company(payload: schemas.CompanyIn, db: Session = Depends(get_d
     """Create the company, or update its category if it already exists."""
     company = db.scalar(select(models.Company).where(models.Company.name == payload.name))
     if company is None:
-        company = models.Company(name=payload.name, category=payload.category)
+        company = models.Company(name=payload.name, category=payload.category, details=payload.details)
         db.add(company)
-    elif payload.category is not None:
-        company.category = payload.category
+    else:
+        if payload.category is not None:
+            company.category = payload.category
+        if payload.details is not None:
+            company.details = payload.details
     db.commit()
     db.refresh(company)
     return company
