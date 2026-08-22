@@ -2,8 +2,8 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List, Optional
 
-import gemini
-from Objects import OBJECT_TYPES as Object
+import llm.gemini as gemini
+from llm.objects import OBJECT_TYPES as Object
 
 load_dotenv()
 
