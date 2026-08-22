@@ -19,8 +19,8 @@ import base64
 import json
 from datetime import datetime
 
-import gemini
-from roomDescription import Anchor, Room, Payload, describe_room
+import llm.gemini as gemini
+from llm.roomDescription import Anchor, Room, Payload, describe_room
 from database import categories, get_db, init_db, models, schemas
 
 

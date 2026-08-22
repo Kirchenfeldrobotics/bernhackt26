@@ -8,7 +8,7 @@ problems only -- a later prompt turns this output into solutions.
 """
 from sqlalchemy import select
 
-import gemini
+import llm.gemini as gemini
 from database import SessionLocal, models
 
 # Stands in for a field the company row does not have filled in yet, so the
