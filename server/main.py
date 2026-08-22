@@ -1,15 +1,24 @@
+import os
+
+from dotenv import load_dotenv
+
+# Must run before the imports below: they read their configuration (DATABASE_URL,
+# RECEIVE_DIR, GEMINI_API_KEY) on import. Variables already in the real
+# environment win over the file.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import base64
-import os
 from datetime import datetime
 
+import gemini
 from database import categories, get_db, init_db, models, schemas
 
 
@@ -49,6 +58,7 @@ class Payload(BaseModel):
 async def root():
     return {"status": "alive"}
 
+# Receive data from vr
 @app.post("/receive-data")
 async def receive_data(payload: Payload):
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -63,7 +73,49 @@ async def receive_data(payload: Payload):
         f.write(payload.room.model_dump_json(indent=2))
 
     print(f"[{stamp}] {len(payload.room.anchors)} anchors, {len(payload.captures)} images saved to {batch_dir}")
+
+    # Kick off agent pipline
+
+
+    
+
+    # Send data back to vr 
+
     return {"status": "ok", "batch": stamp, "received_images": len(payload.captures)}
+
+
+# --- gemini -----------------------------------------------------------------
+
+class GeminiRequest(BaseModel):
+    prompt: str
+    # Raw base64 JPEGs, same encoding the VR app posts to /receive-data.
+    images: List[str] = []
+    # Overrides GEMINI_MODEL / the default model for this one request.
+    model: Optional[str] = None
+
+    @field_validator("prompt")
+    @classmethod
+    def prompt_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("prompt must not be empty")
+        return v
+
+
+@app.post("/send-to-gemini")
+async def send_to_gemini(payload: GeminiRequest):
+    """Send a prompt and any attached images to Gemini and return its answer."""
+    try:
+        output = await gemini.generate(payload.prompt, payload.images, payload.model)
+    except ValueError as exc:  # undecodable image: the caller's problem
+        raise HTTPException(status_code=400, detail=str(exc))
+    except gemini.GeminiNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except gemini.GeminiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    print(f"[gemini] prompt {len(payload.prompt)} chars, {len(payload.images)} images -> {len(output)} chars")
+    return {"status": "ok", "output": output}
 
 
 # --- companies & categories -------------------------------------------------
