@@ -5,6 +5,7 @@ server/received/
 server/.env
 *.pyc
 node_modules
+.env
 
 
 
@@ -52,4 +53,5 @@ server/data/
 *.db
 .env
 *.env
+graphify-out/
 server/.env
