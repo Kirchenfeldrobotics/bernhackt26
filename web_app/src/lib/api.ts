@@ -19,20 +19,56 @@ export type GeminiOutput = {
   description: string;
 };
 
+/** A failed request, carrying the status so callers can tell a 404 apart. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+/** FastAPI reports failures as {"detail": ...}; show that rather than raw JSON. */
+function errorMessage(body: string, response: Response): string {
+  try {
+    const detail = JSON.parse(body).detail;
+    if (typeof detail === "string") return detail;
+    if (detail !== undefined) return JSON.stringify(detail);
+  } catch {
+    // not JSON; fall through to the body itself
+  }
+  return body || `${response.status} ${response.statusText}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `${response.status} ${response.statusText}`);
+    throw new ApiError(errorMessage(await response.text(), response), response.status);
   }
   return response.json() as Promise<T>;
 }
 
+export function listCompanies() {
+  return request<Company[]>("/companies");
+}
+
 export function getCompany(name: string) {
   return request<Company>(`/companies/${encodeURIComponent(name)}`);
+}
+
+/** The company, or null if no company of that name exists yet. */
+export async function findCompany(name: string): Promise<Company | null> {
+  try {
+    return await getCompany(name);
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.status === 404) return null;
+    throw cause;
+  }
 }
 
 /** Creates the company if it is new, otherwise updates the fields given. */
