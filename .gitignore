@@ -1,0 +1,6 @@
+__pycache__/
+venv/
+server/received/
+*.pyc
+server/data/
+*.db
