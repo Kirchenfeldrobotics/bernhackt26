@@ -24,7 +24,7 @@ import llm.gemini as gemini
 from llm.roomDescription import Anchor, Room, Payload, describe_room
 from llm.determine_problems import determine_problems, CompanyNotFound
 from llm.conclusion import conclusion
-from database import categories, get_db, init_db, models, persistence, schemas
+from database import get_db, init_db, models, persistence, schemas
 
 
 @asynccontextmanager
@@ -92,13 +92,15 @@ async def receive_data(payload: Payload, db: Session = Depends(get_db)):
 
     with open(f"{batch_dir}/problems.txt", "w") as f:
         f.write(problems)
-    with open(f"{batch_dir}/plan.json", "w") as f:
-        json.dump(plan, f, indent=2)
-
     try:
+        # Also stamps a uuid onto every solution in `plan`, so do this before
+        # the plan is written out or returned.
         persistence.save_plan(plan, payload.company_name, stamp, db)
     except Exception as exc:  # Gemini already succeeded; do not lose that response.
         print(f"[{stamp}] failed to persist conclusions to the database: {exc}")
+
+    with open(f"{batch_dir}/plan.json", "w") as f:
+        json.dump(plan, f, indent=2)
 
     return {
         "status": "ok",
@@ -109,39 +111,6 @@ async def receive_data(payload: Payload, db: Session = Depends(get_db)):
         "plan": plan,
     }
 
-
-# --- gemini -----------------------------------------------------------------
-
-class GeminiRequest(BaseModel):
-    prompt: str
-    # Raw base64 JPEGs, same encoding the VR app posts to /receive-data.
-    images: List[str] = []
-    # Overrides GEMINI_MODEL / the default model for this one request.
-    model: Optional[str] = None
-
-    @field_validator("prompt")
-    @classmethod
-    def prompt_not_blank(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("prompt must not be empty")
-        return v
-
-
-@app.post("/send-to-gemini")
-async def send_to_gemini(payload: GeminiRequest):
-    """Send a prompt and any attached images to Gemini and return its answer."""
-    try:
-        output = await gemini.generate(payload.prompt, payload.images, payload.model)
-    except ValueError as exc:  # undecodable image: the caller's problem
-        raise HTTPException(status_code=400, detail=str(exc))
-    except gemini.GeminiNotConfigured as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
-    except gemini.GeminiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-
-    print(f"[gemini] prompt {len(payload.prompt)} chars, {len(payload.images)} images -> {len(output)} chars")
-    return {"status": "ok", "output": output}
 
 
 # --- stored gemini outputs --------------------------------------------------
@@ -217,25 +186,11 @@ async def get_gemini_output(batch: str):
     return output
 
 
-# --- companies & categories -------------------------------------------------
-
-@app.get("/categories")
-async def list_categories():
-    return {"categories": categories.CATEGORIES}
-
+# --- companies --------------------------------------------------------------
 
 @app.get("/companies", response_model=List[schemas.CompanyOut])
-async def list_companies(
-    category: Optional[str] = Query(None, description="filter by exact category"),
-    uncategorized: bool = Query(False, description="only companies with no category yet"),
-    db: Session = Depends(get_db),
-):
-    stmt = select(models.Company).order_by(models.Company.name)
-    if uncategorized:
-        stmt = stmt.where(models.Company.category.is_(None))
-    elif category is not None:
-        stmt = stmt.where(models.Company.category == category)
-    return db.scalars(stmt).all()
+async def list_companies(db: Session = Depends(get_db)):
+    return db.scalars(select(models.Company).order_by(models.Company.name)).all()
 
 
 @app.get("/companies/{name}", response_model=schemas.CompanyOut)
@@ -248,36 +203,20 @@ async def get_company(name: str, db: Session = Depends(get_db)):
 
 @app.post("/companies", response_model=schemas.CompanyOut)
 async def upsert_company(payload: schemas.CompanyIn, db: Session = Depends(get_db)):
-    """Create the company, or update its category if it already exists."""
+    """Create the company, or update its details if it already exists."""
     company = db.scalar(select(models.Company).where(models.Company.name == payload.name))
     if company is None:
         company = models.Company(
             name=payload.name,
-            category=payload.category,
             website=payload.website,
             details=payload.details,
         )
         db.add(company)
     else:
-        if payload.category is not None:
-            company.category = payload.category
         if payload.website is not None:
             company.website = payload.website
         if payload.details is not None:
             company.details = payload.details
-    db.commit()
-    db.refresh(company)
-    return company
-
-
-@app.put("/companies/{name}/category", response_model=schemas.CompanyOut)
-async def set_category(name: str, payload: schemas.CategoryIn, db: Session = Depends(get_db)):
-    """Assign a category to a company, creating the company if it is new."""
-    company = db.scalar(select(models.Company).where(models.Company.name == name))
-    if company is None:
-        company = models.Company(name=name)
-        db.add(company)
-    company.category = payload.category
     db.commit()
     db.refresh(company)
     return company
@@ -322,3 +261,45 @@ async def delete_solution(solution_uuid: str, db: Session = Depends(get_db)):
     db.delete(accepted)
     db.commit()
     return {"status": "deleted", "solution_uuid": solution_uuid}
+
+
+@app.post("/get-accepted-solutions", response_model=List[schemas.AcceptedSolutionOut])
+async def get_accepted_solutions(payload: schemas.CompanyNameIn, db: Session = Depends(get_db)):
+    """Every solution this company has accepted, with the conclusion around it.
+
+    Solutions live inside each conclusion's JSON column rather than in a table
+    of their own, so the mapping is: collect the company's solution ids, ask the
+    database which of them were accepted, then keep those.
+    """
+    conclusions = db.scalars(
+        select(models.Conclusion)
+        .where(models.Conclusion.company_name == payload.company_name)
+        .order_by(models.Conclusion.created_at, models.Conclusion.id)
+    ).all()
+
+    solution_ids = [
+        solution["id"]
+        for conclusion in conclusions
+        for solution in conclusion.solutions or []
+        if solution.get("id") is not None
+    ]
+    if not solution_ids:
+        return []
+
+    accepted = set(
+        db.scalars(
+            select(models.AcceptedSolution.solution_uuid).where(
+                models.AcceptedSolution.solution_uuid.in_(solution_ids)
+            )
+        ).all()
+    )
+
+    return [
+        schemas.AcceptedSolutionOut(
+            solution=solution,
+            conclusion=schemas.AcceptedSolutionConclusion.model_validate(conclusion),
+        )
+        for conclusion in conclusions
+        for solution in conclusion.solutions or []
+        if solution.get("id") in accepted
+    ]
