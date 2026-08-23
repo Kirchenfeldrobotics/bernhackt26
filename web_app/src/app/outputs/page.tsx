@@ -12,6 +12,38 @@ import {
   type GeminiOutput,
 } from "@/lib/api";
 
+const BODY = "text-body-sm leading-body-sm tracking-body-sm";
+
+/**
+ * What one scan is worth, or what little is known about it so far. A scan
+ * carries no conclusion until the analysis has run, and the description can
+ * come back empty, so neither is assumed to be there.
+ */
+function ScanSummary({ output }: { output: GeminiOutput }) {
+  const total = output.conclusion === null ? null : totalSavings(output.conclusion);
+  const description = output.description.trim();
+
+  return (
+    <>
+      {output.conclusion === null ? (
+        <p className={`mt-3 ${BODY} text-ash`}>Not analysed yet</p>
+      ) : total === null ? (
+        <p className={`mt-3 ${BODY} text-fog`}>
+          {output.conclusion.entries.length} analysed
+        </p>
+      ) : (
+        <p className={`mt-3 ${BODY} text-fog`}>
+          <span className="text-paper">{formatChf(total)}</span> over ten years
+        </p>
+      )}
+
+      <p className={`mt-2 line-clamp-2 ${BODY} text-ash`}>
+        {description === "" ? "No room description was stored for this scan." : description}
+      </p>
+    </>
+  );
+}
+
 function OutputList() {
   const [outputs, setOutputs] = useState<GeminiOutput[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,22 +101,7 @@ function OutputList() {
 
               {/* What the scan is worth once it has been analysed; the raw
                   description is what there is to show until then. */}
-              {output.conclusion !== null ? (
-                <p className="mt-3 text-body-sm leading-body-sm tracking-body-sm text-fog">
-                  <span className="text-paper">
-                    {formatChf(totalSavings(output.conclusion))}
-                  </span>{" "}
-                  over ten years
-                </p>
-              ) : (
-                <p className="mt-3 text-body-sm leading-body-sm tracking-body-sm text-ash">
-                  Not analysed yet
-                </p>
-              )}
-
-              <p className="mt-2 line-clamp-2 text-body-sm leading-body-sm tracking-body-sm text-ash">
-                {output.description}
-              </p>
+              <ScanSummary output={output} />
             </Link>
           </li>
         ))}
