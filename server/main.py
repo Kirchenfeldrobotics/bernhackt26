@@ -22,6 +22,9 @@ from datetime import datetime
 import llm.gemini as gemini
 from llm.roomDescription import Anchor, Room, Payload, describe_room
 from database import categories, get_db, init_db, models, schemas
+from determine_problems import CompanyNotFound, determine_problems
+from solutions import ConclusionEntry
+from solutions import solutions as find_solutions
 
 
 @asynccontextmanager
@@ -129,6 +132,21 @@ async def send_to_gemini(payload: GeminiRequest):
 BATCH_STAMP_FORMAT = "%Y%m%d_%H%M%S"
 
 
+class StoredConclusion(BaseModel):
+    """The finished analysis for one batch, as it sits in its conclusion.json.
+
+    `entries` is the list the web app renders: title, problem, solutions,
+    products and savings, one entry per fix. `problems` is step 1's answer kept
+    verbatim -- the markdown the entries were derived from, shown as the audit's
+    working notes.
+    """
+
+    company: str
+    created_at: datetime
+    problems: str
+    entries: List[ConclusionEntry]
+
+
 class GeminiOutputOut(BaseModel):
     """One Gemini answer that /receive-data already stored on disk."""
 
@@ -137,6 +155,37 @@ class GeminiOutputOut(BaseModel):
     images: int
     anchors: int
     description: str
+    # Null until the analysis has been run for this batch.
+    conclusion: Optional[StoredConclusion] = None
+
+
+def _batch_dir(batch: str) -> str:
+    """The directory of one batch.
+
+    The name goes straight into a path, so it may only be a plain directory
+    name -- never a way out of RECEIVE_DIR.
+    """
+    if batch != os.path.basename(batch) or batch in ("", ".", ".."):
+        raise HTTPException(status_code=400, detail=f"invalid batch {batch!r}")
+    return os.path.join(RECEIVE_DIR, batch)
+
+
+def _read_conclusion(batch_dir: str) -> Optional[StoredConclusion]:
+    """Load a batch's stored conclusion, or None if it has not been run yet."""
+    path = os.path.join(batch_dir, "conclusion.json")
+    if not os.path.isfile(path):
+        return None
+
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    try:
+        return StoredConclusion.model_validate(data)
+    except ValueError as exc:
+        # Written by an older shape of the pipeline. A batch showing up without
+        # its conclusion beats a 500 on the whole list.
+        print(f"[conclusion] ignoring unreadable {path}: {exc}")
+        return None
 
 
 def _read_batch(batch: str) -> Optional[GeminiOutputOut]:
@@ -146,13 +195,13 @@ def _read_batch(batch: str) -> Optional[GeminiOutputOut]:
     if not os.path.isfile(description_path):
         return None
 
-    with open(description_path) as f:
+    with open(description_path, encoding="utf-8") as f:
         description = json.load(f).get("description", "")
 
     anchors = 0
     room_path = os.path.join(batch_dir, "room.json")
     if os.path.isfile(room_path):
-        with open(room_path) as f:
+        with open(room_path, encoding="utf-8") as f:
             anchors = len(json.load(f).get("anchors", []))
 
     try:
@@ -166,6 +215,7 @@ def _read_batch(batch: str) -> Optional[GeminiOutputOut]:
         images=len([n for n in os.listdir(batch_dir) if n.endswith(".jpg")]),
         anchors=anchors,
         description=description,
+        conclusion=_read_conclusion(batch_dir),
     )
 
 
@@ -184,15 +234,79 @@ async def list_gemini_outputs():
 
 @app.get("/gemini-outputs/{batch}", response_model=GeminiOutputOut)
 async def get_gemini_output(batch: str):
-    # The batch name goes straight into a path, so it may only be a plain
-    # directory name -- never a way out of RECEIVE_DIR.
-    if batch != os.path.basename(batch) or batch in ("", ".", ".."):
-        raise HTTPException(status_code=400, detail=f"invalid batch {batch!r}")
-
+    _batch_dir(batch)  # rejects a name that is not a plain directory
     output = _read_batch(batch)
     if output is None:
         raise HTTPException(status_code=404, detail=f"no gemini output for batch {batch!r}")
     return output
+
+
+# --- the conclusion: problems turned into placed, costed solutions ----------
+
+class ConclusionRequest(BaseModel):
+    """Which company a scan is being analysed for."""
+
+    company: str
+
+    @field_validator("company")
+    @classmethod
+    def company_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("company must not be empty")
+        return v
+
+
+@app.get("/gemini-outputs/{batch}/conclusion", response_model=StoredConclusion)
+async def get_conclusion(batch: str):
+    conclusion = _read_conclusion(_batch_dir(batch))
+    if conclusion is None:
+        raise HTTPException(status_code=404, detail=f"no conclusion for batch {batch!r}")
+    return conclusion
+
+
+@app.post("/gemini-outputs/{batch}/conclusion", response_model=StoredConclusion)
+async def create_conclusion(batch: str, payload: ConclusionRequest):
+    """Run the analysis pipeline over a stored scan and keep what it concludes.
+
+    Step 1 names the problems from the room description and the company's own
+    business description; step 2 turns them into placed, costed solutions.
+    Running it again replaces the batch's previous conclusion.
+    """
+    batch_dir = _batch_dir(batch)
+    description_path = os.path.join(batch_dir, "description.json")
+    room_path = os.path.join(batch_dir, "room.json")
+    if not os.path.isfile(description_path) or not os.path.isfile(room_path):
+        raise HTTPException(status_code=404, detail=f"batch {batch!r} has no stored scan")
+
+    with open(description_path, encoding="utf-8") as f:
+        description = json.load(f).get("description", "")
+    with open(room_path, encoding="utf-8") as f:
+        room = json.load(f)
+
+    try:
+        problems = await determine_problems(description, payload.company)
+        entries = (await find_solutions(room, problems))["entries"]
+    except CompanyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except gemini.GeminiNotConfigured as exc:  # before GeminiError: it is a subclass
+        raise HTTPException(status_code=503, detail=str(exc))
+    except gemini.GeminiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except ValueError as exc:  # an empty description or a scan with no anchors
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    conclusion = StoredConclusion(
+        company=payload.company,
+        created_at=datetime.now(),
+        problems=problems,
+        entries=entries,
+    )
+    with open(os.path.join(batch_dir, "conclusion.json"), "w", encoding="utf-8") as f:
+        f.write(conclusion.model_dump_json(indent=2))
+
+    print(f"[conclusion] {batch} for {payload.company}: {len(conclusion.entries)} entries")
+    return conclusion
 
 
 # --- companies & categories -------------------------------------------------

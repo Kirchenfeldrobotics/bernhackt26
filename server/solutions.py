@@ -4,16 +4,27 @@ Takes the problem list determine_problems() produced plus the MRUK anchors the
 Meta Quest scanned, and asks Gemini for concrete fixes -- each one pinned to a
 spot in the room so the VR app knows where to show it.
 
-    plan = await solutions(payload.room.model_dump(), problems)
-    for s in plan["solutions"]:
-        print(s["title"], s["position"], s["savings_10y_chf"])
+What comes back is the *conclusion*: one entry per fix, carrying the five things
+the web app lists, in this order.
+
+    1. title      -- what the fix is
+    2. problem    -- the negative impact it removes
+    3. solutions  -- how to do it
+    4. products   -- what to buy and where; null until a catalogue fills it in
+    5. savings    -- what the company earns by doing it
+
+Use:
+
+    conclusion = await solutions(payload.room.model_dump(), problems)
+    for entry in conclusion["entries"]:
+        print(entry["title"], entry["position"], entry["savings_10y_chf"])
 """
 import json
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-import gemini
+import llm.gemini as gemini
 
 # Keeps one runaway answer from filling the room with panels.
 MAX_SOLUTIONS = 8
@@ -27,16 +38,31 @@ class Position(BaseModel):
     z: float
 
 
+class Product(BaseModel):
+    """Something to buy for a solution, and the page it can be bought on."""
+
+    name: str
+    url: str
+
+
 class Solution(BaseModel):
-    """One green fix, ready to be shown on a panel in the VR app.
+    """One conclusion entry, as Gemini fills it in.
 
     Field order is deliberate: Gemini fills a JSON schema top to bottom, so the
-    reasoning (what and why) is settled before it commits to a number and a place.
+    reasoning -- what is wrong, then what to do about it -- is settled before it
+    commits to a number and a place.
+
+    `products` is deliberately not here; see ConclusionEntry.
     """
 
     title: str = Field(description="Short, concrete name of the fix. At most six words.")
-    bullets: list[str] = Field(
-        description="Two to four punchy bullet points describing the solution. "
+    problem: str = Field(
+        description="The negative impact this fix removes: the problem from the list "
+        "given, in one or two sentences. State only what is wrong, never how to fix "
+        "it -- the fields below are for that."
+    )
+    solutions: list[str] = Field(
+        description="Two to four punchy bullet points describing what to do. "
         "At most ten words each, concrete and satisfying to read, no filler."
     )
     benefit: str = Field(
@@ -62,10 +88,31 @@ class Solution(BaseModel):
     )
 
 
-class SolutionPlan(BaseModel):
-    """The whole answer: every solution found for this room."""
+class ConclusionEntry(Solution):
+    """A solution as it leaves the server, with the product slot added.
 
-    solutions: list[Solution]
+    Products stay out of the schema Gemini answers with: it has no catalogue, so
+    anything it wrote there would be an invented shop URL. The field is null
+    until a real product source fills it in, and the web app reads null as "not
+    sourced yet" rather than "none needed".
+
+    Inherited fields keep their order and `products` lands after them in the
+    JSON; the display order is the one this module documents.
+    """
+
+    products: Optional[list[Product]] = None
+
+
+class SolutionPlan(BaseModel):
+    """The schema Gemini answers with: every solution found for this room."""
+
+    entries: list[Solution]
+
+
+class Conclusion(BaseModel):
+    """The finished analysis, as the API serves it and the web app lists it."""
+
+    entries: list[ConclusionEntry]
 
 
 PROMPT_TEMPLATE = """\
@@ -105,10 +152,13 @@ realise:
 
 ## Step 2 -- answer
 
-Return only JSON in the required schema, filled in as follows:
+Return only JSON in the required schema. Fill each entry in as follows:
 
 - `title`: the fix, named in at most six words.
-- `bullets`: two to four bullets, at most ten words each. Punchy and rewarding
+- `problem`: the negative impact this fix removes, in one or two sentences,
+  taken from the problem list above. The problem only -- no fix, no "should",
+  no "could be replaced by".
+- `solutions`: two to four bullets, at most ten words each. Punchy and rewarding
   to read: concrete actions and numbers, present tense, no filler words, no
   full sentences. This is the text a person sees first in VR.
 - `benefit`: one or two sentences on what the company gains, environmentally and
@@ -122,7 +172,7 @@ Return only JSON in the required schema, filled in as follows:
   near the anchor you named.
 - `placement_reasoning`: one line on why the panel goes exactly there.
 
-Every solution must be grounded in the problems and the anchors given. If the
+Every entry must be grounded in the problems and the anchors given. If the
 problems support fewer than {max_solutions} good solutions, return fewer.
 """
 
@@ -166,9 +216,10 @@ async def solutions(anchors_json: Any, problems: str) -> dict:
     `anchors_json` is the MRUK anchor data from the headset (JSON text, a dict, a
     list or a Room model); `problems` is the text determine_problems() returned.
 
-    Returns {"solutions": [...]}, already parsed and validated against the
-    schema. Raises ValueError on unusable input and gemini.GeminiError if the
-    model cannot be reached or answers with something the schema rejects.
+    Returns {"entries": [...]}, already parsed and validated against the schema,
+    every entry's `products` still null. Raises ValueError on unusable input and
+    gemini.GeminiError if the model cannot be reached or answers with something
+    the schema rejects.
     """
     problems = problems.strip()
     if not problems:
@@ -190,6 +241,10 @@ async def solutions(anchors_json: Any, problems: str) -> dict:
     except ValueError as exc:
         raise gemini.GeminiError(f"Gemini's JSON did not fit the schema: {exc}") from exc
 
+    conclusion = Conclusion(
+        entries=[ConclusionEntry(**entry.model_dump()) for entry in plan.entries]
+    )
+
     print(f"[solutions] {anchor_count} anchors, {len(problems)} chars of problems "
-          f"-> {len(plan.solutions)} solutions")
-    return plan.model_dump()
+          f"-> {len(conclusion.entries)} entries")
+    return conclusion.model_dump()
