@@ -191,6 +191,22 @@ can sit tight around a `<Markdown>` without a stray gap at the top.
 
 ---
 
+## Reaching the API
+
+The browser never calls the API directly. `next.config.ts` forwards `/api` to
+wherever the server runs, so every request the browser makes is same-origin.
+
+This is not a detail. The API's CORS allowlist is `http://localhost:3000` and
+nothing else — a preflight from any other address comes back `400` with no
+`access-control-allow-origin`, so a browser refuses the request before it is
+sent. Served from anywhere but that one address, every call failed. Forwarding
+server to server sidesteps it: CORS does not apply to the hop from the Next
+server to the API, and the app behaves identically wherever it is deployed.
+
+`API_ORIGIN` sets the upstream, and is the only place the host is written down.
+`NEXT_PUBLIC_API_URL` bypasses the forwarding for a browser that is allowed to
+call a server directly.
+
 ## When the API fails
 
 The API sits behind a proxy that answers with its own HTML error page, and it is
@@ -222,6 +238,7 @@ Two rules behind this:
 
 | Path | What it holds |
 | --- | --- |
+| [`next.config.ts`](next.config.ts) | where the API is, and the forwarding that avoids CORS |
 | [`src/app/globals.css`](src/app/globals.css) | every design token |
 | [`src/components/AppShell.tsx`](src/components/AppShell.tsx) | header, nav, session gate |
 | [`src/components/ConclusionList.tsx`](src/components/ConclusionList.tsx) | the five-part entry, and the totals line |
