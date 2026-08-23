@@ -7,7 +7,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { clearSession, readSession, subscribeSession } from "@/lib/api";
 
 const NAV = [
-  { href: "/outputs", label: "Outputs" },
+  { href: "/outputs", label: "Solutions" },
   { href: "/settings", label: "Settings" },
 ] as const;
 

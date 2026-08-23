@@ -31,70 +31,6 @@ export type Company = {
   created_at: string;
 };
 
-// --- the conclusion ---------------------------------------------------------
-//
-// Two server generations describe a conclusion differently, and the web app
-// must not care which one answered:
-//
-//   older: solutions: string[]        products: {name,url}[] | null
-//          savings_10y_chf: number    anchor_label + position
-//   newer: solutions: {name,url,description}[]
-//          savings_10y_chf: "|amount|explanation"
-//          anchor: {label, position}
-//
-// Both are normalised into the shapes below at the edge, so exactly one shape
-// reaches the components.
-
-export type Position = { x: number; y: number; z: number };
-
-/** One fix, and the product link behind it when there is one. */
-export type EntrySolution = {
-  name: string;
-  description: string | null;
-  /** Null whenever no product was sourced -- never a guessed URL. */
-  url: string | null;
-};
-
-/** One conclusion entry, in the five parts the list renders. */
-export type ConclusionEntry = {
-  title: string;
-  problem: string;
-  solutions: EntrySolution[];
-  /**
-   * What to buy, kept separate from the solutions so a product keeps its own
-   * name. Null means nothing was sourced; an empty list means the fixes here
-   * genuinely need no purchase.
-   */
-  products: EntrySolution[] | null;
-  savings: { amount: number | null; basis: string | null };
-  benefit: string | null;
-  anchorLabel: string | null;
-  position: Position | null;
-  placementReasoning: string | null;
-};
-
-export type Conclusion = {
-  company: string | null;
-  created_at: string | null;
-  problems: string | null;
-  entries: ConclusionEntry[];
-};
-
-/** One Gemini answer stored on the server by `/receive-data`. */
-export type GeminiOutput = {
-  batch: string;
-  created_at: string;
-  images: number;
-  anchors: number;
-  description: string;
-  /**
-   * Servers without a stored conclusion omit the field entirely rather than
-   * sending null, so this is normalised to null on the way in and every reader
-   * can rely on it being present.
-   */
-  conclusion: Conclusion | null;
-};
-
 /** A failed request, carrying the status so callers can tell a 404 apart. */
 export class ApiError extends Error {
   readonly status: number;
@@ -109,6 +45,7 @@ export class ApiError extends Error {
 // A proxy in front of the API answers with its own HTML error page, which says
 // nothing useful once it is stripped of markup.
 const STATUS_MESSAGE: Record<number, string> = {
+  404: "This server does not offer that endpoint.",
   405: "This server does not offer that endpoint.",
   500: "The API failed while handling the request.",
   502: "The API is not reachable right now. The service behind the proxy is down or restarting.",
@@ -172,7 +109,52 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
-// --- normalising a conclusion ----------------------------------------------
+// --- accepted solutions -----------------------------------------------------
+//
+// `POST /get-accepted-solutions` with {"company_name": …} answers with one row
+// per accepted solution:
+//
+//   [{ solution:   {id, name, url?, description},
+//      conclusion: {id, batch, title, problem, savings_10y_chf, anchor, created_at} }]
+//
+// A conclusion with several accepted solutions therefore repeats across rows.
+// The whole list is regrouped here -- by conclusion, then by scan -- so the
+// components get the shape they actually render and never see the repetition.
+//
+// Only *accepted* solutions come back: a fix nobody took in VR is not in this
+// answer at all.
+
+export type Position = { x: number; y: number; z: number };
+
+/** One accepted fix. `url` is unset for a behavioural one -- it is never invented. */
+export type EntrySolution = {
+  id: string | null;
+  name: string;
+  description: string | null;
+  url: string | null;
+};
+
+/** One conclusion, with the solutions this company accepted for it. */
+export type ConclusionEntry = {
+  id: string | null;
+  batch: string | null;
+  createdAt: string | null;
+  title: string;
+  problem: string;
+  solutions: EntrySolution[];
+  /** The solutions that carry a link: the things there are to buy. */
+  products: EntrySolution[];
+  savings: { amount: number | null; basis: string | null };
+  anchorLabel: string | null;
+  position: Position | null;
+};
+
+/** One scan's worth of conclusions, keyed by the batch they came from. */
+export type Scan = {
+  batch: string;
+  createdAt: string | null;
+  entries: ConclusionEntry[];
+};
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -183,9 +165,9 @@ function asString(value: unknown): string | null {
 }
 
 /**
- * Savings arrive either as a number, or as the newer "|amount|explanation"
- * string. Anything else yields a null amount, which the list shows as unknown
- * rather than as "CHF NaN".
+ * `savings_10y_chf` is the string "|amount|explanation". A bare number is
+ * accepted too, and anything unreadable yields a null amount, which the list
+ * shows as unknown rather than as "CHF NaN".
  */
 function parseSavings(value: unknown): { amount: number | null; basis: string | null } {
   if (typeof value === "number" && Number.isFinite(value))
@@ -209,110 +191,87 @@ function parseSavings(value: unknown): { amount: number | null; basis: string | 
   return { amount: null, basis: null };
 }
 
-/**
- * Solutions are either plain strings with the products listed separately, or
- * objects that already carry their own product link.
- *
- * The two are never zipped together by position: that pairing is invented, and
- * it costs a product its own name. Whichever shape arrived, a product keeps the
- * name the server gave it.
- */
-function normaliseFixes(raw: Record<string, unknown>): {
-  solutions: EntrySolution[];
-  products: EntrySolution[] | null;
-} {
-  const rawSolutions = Array.isArray(raw.solutions) ? raw.solutions : [];
-
-  const solutions = rawSolutions
-    .map((solution): EntrySolution => {
-      if (typeof solution === "string")
-        return { name: solution, description: null, url: null };
-      const record = asRecord(solution);
-      return {
-        name: asString(record.name) ?? "",
-        description: asString(record.description),
-        url: asString(record.url),
-      };
-    })
-    .filter((solution) => solution.name !== "");
-
-  // Older shape: products are their own list, and its absence means unsourced.
-  if (Array.isArray(raw.products)) {
-    const products = raw.products
-      .map((product): EntrySolution => {
-        const record = asRecord(product);
-        return {
-          name: asString(record.name) ?? "",
-          description: asString(record.description),
-          url: asString(record.url),
-        };
-      })
-      .filter((product) => product.name !== "");
-    return { solutions, products };
-  }
-  if (raw.products === null) return { solutions, products: null };
-
-  // Newer shape: a solution carrying a link is itself the product. None
-  // carrying one is a real answer -- every fix here is behavioural.
-  return { solutions, products: solutions.filter((solution) => solution.url !== null) };
+function normaliseSolution(raw: unknown): EntrySolution {
+  const solution = asRecord(raw);
+  return {
+    id: asString(solution.id),
+    name: asString(solution.name) ?? "",
+    description: asString(solution.description),
+    url: asString(solution.url),
+  };
 }
 
-function normaliseEntry(raw: unknown): ConclusionEntry {
-  const entry = asRecord(raw);
-  const anchor = asRecord(entry.anchor);
-  const position = asRecord(entry.position ?? anchor.position);
-
+function normalisePosition(raw: unknown): Position | null {
+  const position = asRecord(raw);
   const coordinate = (key: "x" | "y" | "z") =>
     typeof position[key] === "number" ? (position[key] as number) : null;
   const [x, y, z] = [coordinate("x"), coordinate("y"), coordinate("z")];
-
-  const { solutions, products } = normaliseFixes(entry);
-  // The newer shape folds the explanation into the amount string; the older one
-  // keeps it in its own field.
-  const savings = parseSavings(entry.savings_10y_chf);
-
-  return {
-    title: asString(entry.title) ?? "Untitled",
-    problem: asString(entry.problem) ?? "",
-    solutions,
-    products,
-    savings: {
-      amount: savings.amount,
-      basis: savings.basis ?? asString(entry.savings_basis),
-    },
-    benefit: asString(entry.benefit),
-    anchorLabel: asString(entry.anchor_label) ?? asString(anchor.label),
-    position: x !== null && y !== null && z !== null ? { x, y, z } : null,
-    placementReasoning: asString(entry.placement_reasoning),
-  };
+  return x !== null && y !== null && z !== null ? { x, y, z } : null;
 }
 
-/** Absent, null, or a conclusion in either server's shape. */
-function normaliseConclusion(raw: unknown): Conclusion | null {
-  if (raw === null || raw === undefined) return null;
+/** Collapse the repeated conclusions, keeping each one's accepted solutions together. */
+function groupIntoEntries(rows: unknown): ConclusionEntry[] {
+  if (!Array.isArray(rows)) return [];
 
-  const conclusion = asRecord(raw);
-  // Older servers key the list "entries", newer ones "conclusions".
-  const list = Array.isArray(conclusion.entries)
-    ? conclusion.entries
-    : Array.isArray(conclusion.conclusions)
-      ? conclusion.conclusions
-      : [];
+  const byConclusion = new Map<string, ConclusionEntry>();
 
-  return {
-    company: asString(conclusion.company) ?? asString(conclusion.company_name),
-    created_at: asString(conclusion.created_at),
-    problems: asString(conclusion.problems),
-    entries: list.map(normaliseEntry),
-  };
+  for (const [index, raw] of rows.entries()) {
+    const row = asRecord(raw);
+    const conclusion = asRecord(row.conclusion);
+    const solution = normaliseSolution(row.solution);
+    // Without an id there is nothing to group on, so the row stands alone.
+    const key = asString(conclusion.id) ?? `row-${index}`;
+
+    let entry = byConclusion.get(key);
+    if (entry === undefined) {
+      const anchor = asRecord(conclusion.anchor);
+      entry = {
+        id: asString(conclusion.id),
+        batch: asString(conclusion.batch),
+        createdAt: asString(conclusion.created_at),
+        title: asString(conclusion.title) ?? "Untitled",
+        problem: asString(conclusion.problem) ?? "",
+        solutions: [],
+        products: [],
+        savings: parseSavings(conclusion.savings_10y_chf),
+        anchorLabel: asString(anchor.label),
+        position: normalisePosition(anchor.position),
+      };
+      byConclusion.set(key, entry);
+    }
+
+    if (solution.name !== "") {
+      entry.solutions.push(solution);
+      if (solution.url !== null) entry.products.push(solution);
+    }
+  }
+
+  return [...byConclusion.values()];
 }
 
-function normaliseOutput(raw: GeminiOutput): GeminiOutput {
-  return {
-    ...raw,
-    description: typeof raw.description === "string" ? raw.description : "",
-    conclusion: normaliseConclusion((raw as { conclusion?: unknown }).conclusion),
-  };
+/** Group the conclusions by the scan they came out of, newest scan first. */
+function groupIntoScans(entries: ConclusionEntry[]): Scan[] {
+  const byBatch = new Map<string, Scan>();
+
+  for (const entry of entries) {
+    // A conclusion with no batch still belongs somewhere it can be opened.
+    const batch = entry.batch ?? "unknown";
+    let scan = byBatch.get(batch);
+    if (scan === undefined) {
+      scan = { batch, createdAt: entry.createdAt, entries: [] };
+      byBatch.set(batch, scan);
+    }
+    scan.entries.push(entry);
+    // The scan is as old as its earliest conclusion.
+    if (
+      scan.createdAt === null ||
+      (entry.createdAt !== null && entry.createdAt < scan.createdAt)
+    )
+      scan.createdAt = entry.createdAt;
+  }
+
+  // Batch names are timestamps, so this sorts newest first either way.
+  return [...byBatch.values()].sort((a, b) => b.batch.localeCompare(a.batch));
 }
 
 // --- endpoints --------------------------------------------------------------
@@ -354,44 +313,23 @@ export function deleteCompany(name: string) {
   );
 }
 
-export async function listGeminiOutputs() {
-  const outputs = await request<GeminiOutput[]>("/gemini-outputs");
-  return outputs.map(normaliseOutput);
-}
-
-export async function getGeminiOutput(batch: string) {
-  return normaliseOutput(
-    await request<GeminiOutput>(`/gemini-outputs/${encodeURIComponent(batch)}`),
-  );
-}
-
-/** Raised when the server has no analysis endpoint at all, rather than failing one. */
-export class ConclusionUnsupported extends Error {
-  constructor() {
-    super(
-      "This server does not offer the analysis endpoint yet, so a conclusion " +
-        "cannot be produced from here.",
-    );
-    this.name = "ConclusionUnsupported";
-  }
-}
-
 /**
- * Run the analysis over a stored scan: problems first, then the solutions they
- * lead to. Slow -- several model calls -- and not every server offers it.
+ * Every conclusion this company has accepted a solution for, grouped by scan.
+ *
+ * The company name is the whole payload: `{"company_name": …}`.
  */
-export async function runConclusion(batch: string, company: string) {
-  try {
-    const raw = await request<unknown>(
-      `/gemini-outputs/${encodeURIComponent(batch)}/conclusion`,
-      { method: "POST", body: JSON.stringify({ company, company_name: company }) },
-    );
-    return normaliseConclusion(raw);
-  } catch (cause) {
-    if (cause instanceof ApiError && (cause.status === 404 || cause.status === 405))
-      throw new ConclusionUnsupported();
-    throw cause;
-  }
+export async function listScans(company: string): Promise<Scan[]> {
+  const rows = await request<unknown>("/get-accepted-solutions", {
+    method: "POST",
+    body: JSON.stringify({ company_name: company }),
+  });
+  return groupIntoScans(groupIntoEntries(rows));
+}
+
+/** One scan's conclusions, or null if this company has none from that batch. */
+export async function getScan(company: string, batch: string): Promise<Scan | null> {
+  const scans = await listScans(company);
+  return scans.find((scan) => scan.batch === batch) ?? null;
 }
 
 /** The signed-in company name, kept in the browser -- there are no passwords. */
@@ -437,7 +375,7 @@ export function clearSession() {
   listeners.forEach((listener) => listener());
 }
 
-/** Batch timestamps come back as ISO strings; show them readably. */
+/** Timestamps come back as ISO strings; show them readably. */
 export function formatBatchDate(iso: string | null) {
   if (iso === null) return "unknown date";
   const date = new Date(iso);
@@ -461,11 +399,11 @@ export function formatChf(amount: number | null) {
 }
 
 /**
- * What the whole conclusion is worth. Null when no entry carried a usable
+ * What a set of conclusions is worth. Null when none of them carried a usable
  * number, so the view can say so instead of showing a confident zero.
  */
-export function totalSavings(conclusion: Conclusion): number | null {
-  const amounts = conclusion.entries
+export function totalSavings(entries: ConclusionEntry[]): number | null {
+  const amounts = entries
     .map((entry) => entry.savings.amount)
     .filter((amount): amount is number => amount !== null);
   return amounts.length === 0 ? null : amounts.reduce((sum, amount) => sum + amount, 0);
