@@ -7,109 +7,88 @@ import AppShell from "@/components/AppShell";
 import {
   formatBatchDate,
   formatChf,
-  listGeminiOutputs,
+  listScans,
   totalSavings,
-  type GeminiOutput,
+  type Scan,
 } from "@/lib/api";
 
 const BODY = "text-body-sm leading-body-sm tracking-body-sm";
 
-/**
- * What one scan is worth, or what little is known about it so far. A scan
- * carries no conclusion until the analysis has run, and the description can
- * come back empty, so neither is assumed to be there.
- */
-function ScanSummary({ output }: { output: GeminiOutput }) {
-  const total = output.conclusion === null ? null : totalSavings(output.conclusion);
-  const description = output.description.trim();
+const BADGE = "rounded-[4px] bg-white/5 px-1.5 text-[12px] leading-[1.4] text-fog";
 
-  return (
-    <>
-      {output.conclusion === null ? (
-        <p className={`mt-3 ${BODY} text-ash`}>Not analysed yet</p>
-      ) : total === null ? (
-        <p className={`mt-3 ${BODY} text-fog`}>
-          {output.conclusion.entries.length} analysed
-        </p>
-      ) : (
-        <p className={`mt-3 ${BODY} text-fog`}>
-          <span className="text-paper">{formatChf(total)}</span> over ten years
-        </p>
-      )}
+const MONO_BADGE = `${BADGE} font-mono tracking-[-0.013em]`;
 
-      <p className={`mt-2 line-clamp-2 ${BODY} text-ash`}>
-        {description === "" ? "No room description was stored for this scan." : description}
-      </p>
-    </>
-  );
+function message(cause: unknown) {
+  return String(cause instanceof Error ? cause.message : cause);
 }
 
-function OutputList() {
-  const [outputs, setOutputs] = useState<GeminiOutput[] | null>(null);
+function ScanList({ company }: { company: string }) {
+  const [scans, setScans] = useState<Scan[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listGeminiOutputs()
-      .then(setOutputs)
-      .catch((cause) => setError(String(cause instanceof Error ? cause.message : cause)));
-  }, []);
+    listScans(company)
+      .then(setScans)
+      .catch((cause) => setError(message(cause)));
+  }, [company]);
 
   if (error !== null)
-    return <p className="text-body-sm leading-body-sm text-coral-red">{error}</p>;
-  if (outputs === null)
-    return <p className="text-body-sm leading-body-sm text-ash">Loading…</p>;
+    return <p className={`${BODY} text-coral-red`}>{error}</p>;
+  if (scans === null) return <p className={`${BODY} text-ash`}>Loading…</p>;
 
   return (
     <div>
       <h1 className="text-heading-sm leading-heading-sm tracking-heading-sm text-paper">
-        Gemini outputs
+        Accepted solutions
       </h1>
-      <p className="mt-3 text-body-sm leading-body-sm tracking-body-sm text-fog">
-        {outputs.length === 0
-          ? "No scans have been sent from the headset yet."
-          : `${outputs.length} scan${outputs.length === 1 ? "" : "s"} stored on the server.`}
+      <p className={`mt-3 ${BODY} text-fog`}>
+        {scans.length === 0
+          ? `Nothing has been accepted for ${company} yet. Solutions are accepted in the headset, and show up here once they are.`
+          : `${scans.length} scan${scans.length === 1 ? "" : "s"} with something accepted.`}
       </p>
 
       <ul className="mt-8 flex flex-col gap-2">
-        {outputs.map((output) => (
-          <li key={output.batch}>
-            <Link
-              href={`/outputs/${output.batch}`}
-              className="block rounded-xl border border-graphite bg-carbon p-6 transition-colors hover:border-smoke"
-            >
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-body-lg leading-body-lg tracking-body-lg text-paper">
-                  {formatBatchDate(output.created_at)}
-                </span>
-                {/* Batch stamps are technical metadata: monospaced, like an issue ID. */}
-                <span className="rounded-[4px] bg-white/5 px-1.5 font-mono text-[12px] leading-[1.4] tracking-[-0.013em] text-fog">
-                  {output.batch}
-                </span>
-                <span className="rounded-[4px] bg-white/5 px-1.5 text-[12px] leading-[1.4] text-fog">
-                  {output.images} images
-                </span>
-                <span className="rounded-[4px] bg-white/5 px-1.5 text-[12px] leading-[1.4] text-fog">
-                  {output.anchors} anchors
-                </span>
-                {output.conclusion !== null && (
-                  <span className="rounded-[4px] bg-white/5 px-1.5 text-[12px] leading-[1.4] text-fog">
-                    {output.conclusion.entries.length}{" "}
-                    {output.conclusion.entries.length === 1 ? "fix" : "fixes"}
-                  </span>
-                )}
-              </div>
+        {scans.map((scan) => {
+          const total = totalSavings(scan.entries);
+          const count = scan.entries.length;
 
-              {/* What the scan is worth once it has been analysed; the raw
-                  description is what there is to show until then. */}
-              <ScanSummary output={output} />
-            </Link>
-          </li>
-        ))}
+          return (
+            <li key={scan.batch}>
+              <Link
+                href={`/outputs/${scan.batch}`}
+                className="block rounded-xl border border-graphite bg-carbon p-6 transition-colors hover:border-smoke"
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-body-lg leading-body-lg tracking-body-lg text-paper">
+                    {formatBatchDate(scan.createdAt)}
+                  </span>
+                  {/* Batch stamps are technical metadata: monospaced, like an issue ID. */}
+                  <span className={MONO_BADGE}>{scan.batch}</span>
+                  <span className={BADGE}>
+                    {count} {count === 1 ? "fix" : "fixes"}
+                  </span>
+                </div>
+
+                {total === null ? (
+                  <p className={`mt-3 ${BODY} text-ash`}>No savings figure given</p>
+                ) : (
+                  <p className={`mt-3 ${BODY} text-fog`}>
+                    <span className="text-paper">{formatChf(total)}</span> over ten years
+                  </p>
+                )}
+
+                <p className={`mt-2 line-clamp-2 ${BODY} text-ash`}>
+                  {scan.entries.map((entry) => entry.title).join(" · ")}
+                </p>
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
 }
 
 export default function OutputsPage() {
-  return <AppShell>{() => <OutputList />}</AppShell>;
+  return <AppShell>{(company) => <ScanList company={company} />}</AppShell>;
 }

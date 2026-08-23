@@ -1,26 +1,25 @@
+import Markdown from "@/components/Markdown";
 import {
   formatChf,
   totalSavings,
-  type Conclusion,
   type ConclusionEntry,
   type EntrySolution,
 } from "@/lib/api";
 
 /**
- * The conclusion, as a list of fixes.
+ * The conclusions a company has accepted solutions for, as a list of fixes.
  *
- * Every entry is read in the same five parts, in this order:
+ * Every entry is read in the same five parts, in this order, and each maps onto
+ * one field of what `/get-accepted-solutions` returns:
  *
- *   1. Title         what the fix is
- *   2. Problem       the negative impact it removes
- *   3. Solutions     how to do it
- *   4. Products      what to buy, and where -- null until anything is sourced
- *   5. Money saving  what the company earns by doing it
+ *   1. Title         `conclusion.title`
+ *   2. Problem       `conclusion.problem`          the negative impact
+ *   3. Solutions     the accepted `solution` rows  name + description
+ *   4. Products      those carrying a `url`
+ *   5. Money saving  `conclusion.savings_10y_chf`  "|amount|explanation"
  *
- * The entries arrive already normalised by `lib/api`, so this component renders
- * one shape no matter which server generation answered. Everything optional is
- * genuinely optional here: an entry missing a field is shown without it rather
- * than taking the view down.
+ * `conclusion.anchor` is where the VR app floats the panel; it sits in the
+ * card's footer rather than being dropped.
  */
 
 const EYEBROW = "text-eyebrow leading-eyebrow tracking-eyebrow uppercase";
@@ -48,18 +47,18 @@ function Part({
   );
 }
 
-/** 3. Solutions. Each carries its own description when the server sent one. */
+/** 3. Solutions. Only the ones actually accepted in VR come back. */
 function Solutions({ solutions }: { solutions: EntrySolution[] }) {
   if (solutions.length === 0)
-    return <p className={`${BODY} text-ash`}>No solutions were proposed.</p>;
+    return <p className={`${BODY} text-ash`}>No solutions were accepted for this one.</p>;
 
   return (
     <ul className={`flex list-disc flex-col gap-2 pl-5 marker:text-smoke ${BODY} text-mist`}>
       {solutions.map((solution, index) => (
-        <li key={index}>
+        <li key={solution.id ?? index}>
           {solution.name}
           {solution.description !== null && (
-            <span className="block text-ash">{solution.description}</span>
+            <Markdown source={solution.description} className="mt-0.5 text-ash" />
           )}
         </li>
       ))}
@@ -68,19 +67,10 @@ function Solutions({ solutions }: { solutions: EntrySolution[] }) {
 }
 
 /**
- * 4. Products. Null means nothing was sourced; an empty list means these fixes
- * need no purchase at all. A URL is never invented, so a product without one is
- * still shown -- just not as a link.
+ * 4. Products. A solution carrying a link is a thing to buy; one without is a
+ * behavioural fix. A URL is never invented, so an empty list is a real answer.
  */
-function Products({ products }: { products: EntrySolution[] | null }) {
-  if (products === null)
-    return (
-      <p className={`${BODY} text-ash`}>
-        Not sourced yet — the analysis leaves this empty until a product catalogue
-        is wired up.
-      </p>
-    );
-
+function Products({ products }: { products: EntrySolution[] }) {
   if (products.length === 0)
     return (
       <p className={`${BODY} text-ash`}>Nothing to buy — these fixes are behavioural.</p>
@@ -89,22 +79,18 @@ function Products({ products }: { products: EntrySolution[] | null }) {
   return (
     <ul className="flex flex-col gap-1">
       {products.map((product, index) => (
-        <li key={index}>
-          {product.url === null ? (
-            <span className={`${BODY} text-mist`}>{product.name}</span>
-          ) : (
-            <a
-              href={product.url}
-              target="_blank"
-              rel="noreferrer noopener"
-              className={`${BODY} text-mist underline decoration-smoke underline-offset-2 transition-colors hover:text-paper hover:decoration-fog`}
-            >
-              {product.name}
-              <span aria-hidden className="ml-1 text-ash">
-                ↗
-              </span>
-            </a>
-          )}
+        <li key={product.id ?? index}>
+          <a
+            href={product.url as string}
+            target="_blank"
+            rel="noreferrer noopener"
+            className={`${BODY} text-mist underline decoration-smoke underline-offset-2 transition-colors hover:text-paper hover:decoration-fog`}
+          >
+            {product.name}
+            <span aria-hidden className="ml-1 text-ash">
+              ↗
+            </span>
+          </a>
         </li>
       ))}
     </ul>
@@ -125,13 +111,12 @@ function Entry({ entry, index }: { entry: ConclusionEntry; index: number }) {
           {entry.title}
         </h3>
       </div>
-      {entry.benefit !== null && <p className={`mt-2 ${BODY} text-fog`}>{entry.benefit}</p>}
 
       {/* 2. Problem — the negative impact. Coral red is the system's colour for
           something being wrong, used here on the label alone. */}
       {entry.problem !== "" && (
         <Part label="Problem" tone="text-coral-red/80">
-          <p className={`${BODY} text-mist`}>{entry.problem}</p>
+          <Markdown source={entry.problem} />
         </Part>
       )}
 
@@ -140,7 +125,7 @@ function Entry({ entry, index }: { entry: ConclusionEntry; index: number }) {
         <Solutions solutions={entry.solutions} />
       </Part>
 
-      {/* 4. Products — links out, or nothing sourced. */}
+      {/* 4. Products — links out, or nothing to buy. */}
       <Part label="Products">
         <Products products={entry.products} />
       </Part>
@@ -170,38 +155,33 @@ function Entry({ entry, index }: { entry: ConclusionEntry; index: number }) {
               {position.x.toFixed(2)}, {position.y.toFixed(2)}, {position.z.toFixed(2)}
             </span>
           )}
-          {entry.placementReasoning !== null && (
-            <span className="text-caption leading-caption text-ash">
-              {entry.placementReasoning}
-            </span>
-          )}
         </div>
       )}
     </li>
   );
 }
 
-export default function ConclusionList({ conclusion }: { conclusion: Conclusion }) {
-  if (conclusion.entries.length === 0)
+export default function ConclusionList({ entries }: { entries: ConclusionEntry[] }) {
+  if (entries.length === 0)
     return (
       <p className={`${BODY} text-ash`}>
-        The analysis found nothing to fix in this room.
+        Nothing has been accepted for this scan yet.
       </p>
     );
 
   return (
     <ul className="flex flex-col gap-2">
-      {conclusion.entries.map((entry, index) => (
-        <Entry key={index} entry={entry} index={index} />
+      {entries.map((entry, index) => (
+        <Entry key={entry.id ?? index} entry={entry} index={index} />
       ))}
     </ul>
   );
 }
 
-/** What the whole conclusion adds up to: how many fixes, and what they are worth. */
-export function ConclusionTotals({ conclusion }: { conclusion: Conclusion }) {
-  const count = conclusion.entries.length;
-  const total = totalSavings(conclusion);
+/** What a set of conclusions adds up to: how many fixes, and what they are worth. */
+export function ConclusionTotals({ entries }: { entries: ConclusionEntry[] }) {
+  const count = entries.length;
+  const total = totalSavings(entries);
 
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">

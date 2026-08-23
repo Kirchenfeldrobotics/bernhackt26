@@ -78,66 +78,54 @@ Elevation is a hairline `border-graphite`, not a shadow stack. Cards sit on
 
 ## The conclusion list
 
-The centrepiece of the app: what a scan concluded, as a list of fixes. It lives
+The centrepiece of the app: the fixes a company accepted in VR, as a list. It is
+fed by one call -- `POST /get-accepted-solutions` with `{"company_name": …}` --
+which answers with one row per accepted solution, each carrying the conclusion
+around it. A conclusion with several accepted solutions therefore repeats across
+rows, so `lib/api.ts` regroups the whole list by conclusion, then by scan, and
+the components never see the repetition. Only *accepted* solutions come back: a
+fix nobody took in the headset is not in the answer at all.
+
+It lives
 in [`src/components/ConclusionList.tsx`](src/components/ConclusionList.tsx) and
 is rendered by
 [`src/app/outputs/[batch]/page.tsx`](src/app/outputs/[batch]/page.tsx).
 
 ### The five parts
 
-Every entry is read in the same five parts, in this order. Two server
-generations describe a conclusion differently, so `lib/api.ts` normalises both
-into one shape at the edge — the components never branch on which server
-answered.
+Every entry is read in the same five parts, in this order. Each maps onto one
+field of what `POST /get-accepted-solutions` returns:
 
-| # | Part | Rendering |
-| --- | --- | --- |
-| 1 | **Title** | `body-lg` in `text-paper`, preceded by a monospaced index (`01`, `02`, …); the benefit line, where there is one, follows in `text-fog`. |
-| 2 | **Problem** | The negative impact. Label in `coral-red/80`, body in `text-mist`. |
-| 3 | **Solutions** | One bullet per fix, `list-disc` with `marker:text-smoke`, each with its description beneath in `text-ash`. |
-| 4 | **Products** | What to buy, and where. See the states below. |
-| 5 | **Money saving** | `subheading` in `text-paper`, the largest type on the card, with the basis beneath in `text-ash`. |
+| # | Part | Field | Rendering |
+| --- | --- | --- | --- |
+| 1 | **Title** | `conclusion.title` | `body-lg` in `text-paper`, preceded by a monospaced index (`01`, `02`, …). |
+| 2 | **Problem** | `conclusion.problem` | The negative impact. Label in `coral-red/80`, body in `text-mist`. |
+| 3 | **Solutions** | the accepted `solution` rows | One bullet per fix, `list-disc` with `marker:text-smoke`, each with its description beneath in `text-ash`. |
+| 4 | **Products** | the solutions carrying a `url` | Links out to where each thing is bought. |
+| 5 | **Money saving** | `conclusion.savings_10y_chf` | `subheading` in `text-paper`, the largest type on the card, with the basis beneath in `text-ash`. |
 
-The two server shapes it accepts:
+`conclusion.anchor` is what the VR app needs to float the panel in the room. It
+is not dropped: the label and coordinates sit in a monospaced footer below a
+`border-graphite` rule, out of the reading order of the five parts.
 
-| | older | newer |
-| --- | --- | --- |
-| solutions | `string[]` | `{name, url, description}[]` |
-| products | separate `{name, url}[] \| null` | a solution carrying a `url` |
-| savings | `savings_10y_chf` number + `savings_basis` | `savings_10y_chf` as `"\|amount\|explanation"` |
-| anchor | `anchor_label` + `position` | `anchor{label, position}` |
-| list key | `entries` | `conclusions` |
+### Products
 
-Solutions and products are never zipped together by position — that pairing is
-invented, and it costs a product its own name.
-
-Placement data (`anchor`, `position`, the placement reasoning) is what the VR
-app needs to float the panel in the room. It is not dropped: it sits in a
-monospaced footer below a `border-graphite` rule, out of the reading order of
-the five parts. Every one of these is optional, and an entry missing one is
-rendered without it rather than taking the view down.
-
-### Products, and why it can be null
-
-A URL is never invented. Where the pipeline has no catalogue, or the research
-turned up no clean source link, the field stays empty rather than being filled
-with a plausible-looking shop URL.
+A URL is never invented. A solution carrying one is a thing to buy; one without
+is a behavioural fix, so an empty product list is a real answer, not a gap.
 
 | State | Shown as |
 | --- | --- |
-| `null` | "Not sourced yet — the analysis leaves this empty until a product catalogue is wired up." |
-| `[]` | "Nothing to buy — these fixes are behavioural." |
-| a product with no URL | its name in `text-mist`, not a link |
+| no product carries a link | "Nothing to buy — these fixes are behavioural." |
 | a product with a URL | `text-mist` underlined in `decoration-smoke`, with a `↗` in `text-ash` |
 
 Product links open in a new tab with `rel="noreferrer noopener"`.
 
 ### Totals
 
-Above the list, `ConclusionTotals` states what the whole conclusion is worth: the
-sum of every entry's `savings_10y_chf` at `heading-sm`, then the count of fixes.
-The scan list at `/outputs` shows the same figure per row, so the value of a scan
-is visible before opening it.
+Above the list, `ConclusionTotals` states what a scan is worth: the sum of every
+entry's savings at `heading-sm`, then the count of fixes. The scan list at
+`/outputs` shows the same figure per row, so the value of a scan is visible
+before opening it.
 
 ### Money
 
@@ -155,20 +143,22 @@ as `CHF NaN` or as a confident zero.
 
 | State | View |
 | --- | --- |
-| no conclusion | A single card: what the analysis does, and `Run analysis` in acid lime — the view's one chromatic element. |
-| running | Button reads "Analysing…" and is disabled, with a line noting it is several model calls. |
-| failed | The server's `detail` message in `coral-red` under the button, which re-enables. |
-| no such endpoint | A 404 or 405 means this server cannot analyse at all, so the message says so and the button is withdrawn rather than left to fail again. |
-| has a conclusion | Totals, a ghost `Re-run analysis`, the entry list, then the problems it was derived from, folded away. |
+| nothing accepted anywhere | The list says so, and explains that solutions are accepted in the headset. |
+| nothing accepted for this scan | The detail view names the batch and says the same. |
+| failed | The server's `detail` message in `coral-red`. |
+| has conclusions | Totals, then the entry list. |
 
-The problems text is folded into a `<details>` on purpose: the fixes are the
-answer, and the problem list is the working behind them.
+There is no *Run analysis* button. Conclusions are produced by the headset
+through `/receive-data` and accepted in VR; this app reads what came of that,
+it does not start it. That leaves these views with no primary action, so they
+stay fully monochrome.
 
 ---
 
 ## Markdown
 
-Model output is markdown, so it is rendered as markdown rather than dumped into a
+`conclusion.problem` and each solution's `description` are model-written prose,
+so they are rendered as markdown rather than dumped into a
 `whitespace-pre-wrap` block.
 [`src/components/Markdown.tsx`](src/components/Markdown.tsx) covers the subset
 the prompts actually emit — headings, bold, italic, inline code, links, bulleted
