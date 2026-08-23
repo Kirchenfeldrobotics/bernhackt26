@@ -7,21 +7,20 @@ import {
 } from "@/lib/api";
 
 /**
- * The conclusions a company has accepted solutions for, as a list of fixes.
+ * The conclusions a company accepted in VR, as a list of fixes.
  *
- * One card per conclusion, holding the whole text. Every entry is read in the
- * same four parts, in this order, and each maps onto one field of what
- * `/get-accepted-solutions` returns:
+ * One card per accepted conclusion -- the unit the headset accepts -- holding
+ * the whole text. Every entry is read in the same four parts, in this order,
+ * and each maps onto one field of what `/get-accepted-solutions` returns:
  *
- *   1. Problem       `conclusion.problem`          the negative impact
- *   2. Solutions     the accepted `solution` rows  name + description
+ *   1. Problem       `problem`            the negative impact
+ *   2. Solutions     `solutions`          name + description
  *   3. Products      those carrying a `url`
- *   4. Money saving  `conclusion.savings_10y_chf`  "|amount|explanation"
+ *   4. Money saving  `savings_10y_chf`    "|amount|explanation"
  *
  * The title sits above them, unless the page already carries it as its heading.
- * `conclusion.id` and `conclusion.anchor` are the VR app's business -- an id and
- * a set of room coordinates say nothing to whoever reads this -- so neither is
- * shown.
+ * `id` and `anchor` are the VR app's business -- an id and a set of room
+ * coordinates say nothing to whoever reads this -- so neither is shown.
  *
  * Everything is white: hierarchy is size and weight, never colour.
  */
@@ -42,15 +41,15 @@ function Part({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-/** 2. Solutions. Only the ones actually accepted in VR come back. */
+/** 2. Solutions. Every fix proposed for this conclusion. */
 function Solutions({ solutions }: { solutions: EntrySolution[] }) {
   if (solutions.length === 0)
-    return <p className={BODY}>No solutions were accepted for this one.</p>;
+    return <p className={BODY}>No solutions were proposed for this one.</p>;
 
   return (
     <ul className={`flex list-disc flex-col gap-2 pl-5 marker:text-paper ${BODY}`}>
       {solutions.map((solution, index) => (
-        <li key={solution.id ?? index}>
+        <li key={index}>
           {solution.name}
           {solution.description !== null && (
             <Markdown source={solution.description} className="mt-0.5" />
@@ -72,7 +71,7 @@ function Products({ products }: { products: EntrySolution[] }) {
   return (
     <ul className="flex flex-col gap-1">
       {products.map((product, index) => (
-        <li key={product.id ?? index}>
+        <li key={index}>
           {/* A link is set apart by its underline rather than by a colour. */}
           <a
             href={product.url as string}

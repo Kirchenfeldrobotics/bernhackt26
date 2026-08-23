@@ -1,7 +1,12 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, field_validator
+
+# primary keys were an autoincrement counter before the uuid migration, and a
+# column's type cannot be changed in place, so rows written back then still hold
+# integers; serve both as text rather than 500 on the old ones
+IdText = Annotated[str, BeforeValidator(str)]
 
 # what a caller may set on a company
 class CompanyIn(BaseModel):
@@ -23,7 +28,7 @@ class CompanyIn(BaseModel):
 class CompanyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
+    id: IdText
     name: str
     website: Optional[str]
     details: Optional[str]
@@ -31,16 +36,22 @@ class CompanyOut(BaseModel):
 
 
 # the body the headset posts to /accept-solution
-class AcceptedSolutionIn(BaseModel):
-    solution_uuid: str
+class AcceptedConclusionIn(BaseModel):
+    """The conclusion the user accepted in VR, by its row id.
 
-    # reject blanks before they reach the table as a key
-    @field_validator("solution_uuid")
+    A conclusion is what gets accepted -- not the solutions inside it, which are
+    that one conclusion's detail and carry no ids of their own.
+    """
+
+    conclusion_id: str
+
+    # reject blanks before they reach the database as a key
+    @field_validator("conclusion_id")
     @classmethod
-    def uuid_not_blank(cls, v: str) -> str:
+    def conclusion_id_not_blank(cls, v: str) -> str:
         v = v.strip()
         if not v:
-            raise ValueError("solution_uuid must not be empty")
+            raise ValueError("conclusion_id must not be empty")
         return v
 
 
@@ -58,36 +69,18 @@ class CompanyNameIn(BaseModel):
         return v
 
 
-# the conclusion an accepted solution came from
-class AcceptedSolutionConclusion(BaseModel):
-    """The conclusion an accepted solution was proposed for."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    batch: str
-    title: str
-    problem: str
-    savings_10y_chf: str
-    anchor: dict[str, Any]
-    created_at: datetime
-
-
-# one accepted solution with its surrounding conclusion
-class AcceptedSolutionOut(BaseModel):
-    """One accepted solution, with the conclusion it belongs to."""
-
-    solution: dict[str, Any]
-    conclusion: AcceptedSolutionConclusion
-
-
 # a stored conclusion row exactly as /receive-data persisted it
 class ConclusionOut(BaseModel):
-    """One conclusion as it was written to the database."""
+    """One conclusion as it was written to the database.
+
+    This is the whole unit: the problem, every solution proposed for it, what it
+    saves and where its panel floats. `status` says whether it was accepted in
+    VR; /get-accepted-solutions returns these, filtered to the accepted ones.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
+    id: IdText
     company_name: str
     batch: str
     title: str
