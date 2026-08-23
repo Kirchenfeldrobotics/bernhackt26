@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pydantic
+anthropic
+google-genai
+python-dotenv
+pillow
+python-multipart
+sqlalchemy
+httpx 

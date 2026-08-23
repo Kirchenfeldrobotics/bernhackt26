@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@theme {
+  --color-void: #08090a;
+  --color-carbon: #0f1011;
+  --color-obsidian: #161718;
+  --color-graphite: #23252a;
+  --color-smoke: #383b3f;
+  --color-ash: #62666d;
+  --color-fog: #8a8f98;
+  --color-mist: #d0d6e0;
+  --color-bone: #e5e5e6;
+  --color-paper: #ffffff;
+  --color-acid-lime: #e4f222;
+  --color-pulse-green: #27a644;
+  --color-coral-red: #eb5757;
+  --color-signal-teal: #02b8cc;
+  --color-iris-violet: #6366f1;
+  --color-lavender: #8b5cf6;
+
+  /* Typography. Inter Variable and Berkeley Mono are loaded in layout.tsx as
+     their closest freely available equivalents. */
+  --font-inter-variable: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-berkeley-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, monospace;
+  --font-sans: var(--font-inter-variable);
+  --font-mono: var(--font-berkeley-mono);
+  /* The label naming each part of a conclusion entry sits on `caption`: same
+     size as any other small label, sentence case, set apart by weight alone. */
+  --text-caption: 13px;
+  --leading-caption: 1.2;
+  --text-body-sm: 15px;
+  --leading-body-sm: 1.6;
+  --tracking-body-sm: -0.165px;
+  --text-body-lg: 20px;
+  --leading-body-lg: 1.33;
+  --tracking-body-lg: -0.24px;
+  --text-subheading: 24px;
+  --leading-subheading: 1.33;
+  --tracking-subheading: -0.288px;
+  --text-heading-sm: 32px;
+  --leading-heading-sm: 1.13;
+  --tracking-heading-sm: -0.704px;
+  --text-heading: 48px;
+  --leading-heading: 1;
+  --tracking-heading: -1.056px;
+
+  /* Spacing is left on Tailwind's 4px base, which already is the 4/8/12/24/96
+     ladder this system uses: p-1 p-2 p-3 p-6 p-24. */
+
+  /* Border Radius: cards 12px, inputs and buttons 6px, badges 4px, pills full. */
+  --radius-sm: 2px;
+  --radius-md: 6px;
+  --radius-xl: 12px;
+
+  /* Elevation comes from hairline borders, not shadow stacks. */
+  --shadow-sm: rgba(0, 0, 0, 0.4) 0px 2px 4px 0px;
+  --shadow-subtle: rgb(35, 37, 42) 0px 0px 0px 1px inset;
+}
+
+body {
+  background: var(--color-void);
+  color: var(--color-mist);
+  font-family: var(--font-inter-variable);
+  /* The alternate glyphs are part of the typographic identity. */
+  font-feature-settings: "cv01" on, "ss03" on, "zero" on;
+}
+
+/* Dark is the substrate here, not a preference: keep native controls in step. */
+:root {
+  color-scheme: dark;
+}

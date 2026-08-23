@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # This .gitignore file should be placed at the root of your Unity project directory
 #
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore
@@ -49,11 +50,41 @@ ExportedObj/
 *.slnx
 *.suo
 *.tmp
+=======
+__pycache__/
+venv/
+.venv/
+server/received/
+server/.env
+*.pyc
+node_modules
+.env
+
+
+
+# Unity generated — regenerated on Open Project
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# --- Unity ---
+# Unity solution files (regenerated)
+*.csproj
+*.sln
+*.suo
+>>>>>>> 5b43c7839ff7e09253e087d18589b6c5428e9ab7
 *.user
 *.userprefs
 *.pidb
 *.booproj
 *.svd
+<<<<<<< HEAD
 *.pdb
 *.mdb
 *.opendb
@@ -69,10 +100,22 @@ sysinfo.txt
 
 # Mono auto generated files
 mono_crash.*
+=======
+
+# Unity crash logs
+sysinfo.txt
+crashlytics-build.properties
+
+# IDE
+.vs/
+.idea/
+.vscode/
+>>>>>>> 5b43c7839ff7e09253e087d18589b6c5428e9ab7
 
 # Builds
 *.apk
 *.aab
+<<<<<<< HEAD
 *.unitypackage
 *.unitypackage.meta
 *.app
@@ -104,3 +147,20 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+=======
+
+# OS
+.DS_Store
+Thumbs.db
+
+# --- server / database ---
+server/data/
+*.db
+.env
+*.env
+/graphify-out
+server/.env
+
+
+docs
+>>>>>>> 5b43c7839ff7e09253e087d18589b6c5428e9ab7
