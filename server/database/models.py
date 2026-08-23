@@ -1,27 +1,21 @@
-"""ORM models."""
 import uuid
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import JSON, DateTime, String, Text, func
+from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .session import Base
 
 
+# uuid4 primary keys, so an id exists before the row is flushed
 def new_id() -> str:
-    """Primary keys are uuid4 text, so an id is known before the row is flushed
-    and stays unique across databases -- no autoincrement counter anywhere."""
     return str(uuid.uuid4())
 
 
+# a company and what it does; the name is the natural key
 class Company(Base):
-    """A company and what it does.
-
-    Companies are looked up by name alone, so the name is the natural key: one
-    row per company.
-    """
-
     __tablename__ = "companies"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -34,14 +28,8 @@ class Company(Base):
         return f"<Company {self.name!r}>"
 
 
+# one problem found in a company's office plus every fix proposed for it
 class Conclusion(Base):
-    """One problem found in a company's office, plus every solution proposed for it.
-
-    No FK to Company: a conclusion can be recorded before a matching company
-    row exists, so company_name is kept as a plain string, same as
-    determine_problems() already takes it.
-    """
-
     __tablename__ = "conclusions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -49,12 +37,9 @@ class Conclusion(Base):
     batch: Mapped[str] = mapped_column(String(64), index=True)
     title: Mapped[str] = mapped_column(String(255))
     problem: Mapped[str] = mapped_column(Text)
-    # List of {"id", "name", "url", "description"} dicts -- no separate
-    # solutions table, so "id" here is just a stable identifier within this
-    # list, not a DB primary key.
-    solutions: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    # no solutions table: they live here as json, keyed by the id save_plan stamps
+    solutions: Mapped[list[dict[str, Any]]] = mapped_column(MutableList.as_mutable(JSON))
     savings_10y_chf: Mapped[str] = mapped_column(Text)
-    # {"label": ..., "position": {"x": ..., "y": ..., "z": ...}}
     anchor: Mapped[dict[str, Any]] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(32), default="in_progress")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -63,15 +48,8 @@ class Conclusion(Base):
         return f"<Conclusion {self.id} company={self.company_name!r} batch={self.batch!r}>"
 
 
+# a solution the headset marked as chosen, by id alone
 class AcceptedSolution(Base):
-    """A solution the user accepted in VR.
-
-    Deliberately just the id: the solution's content lives with the pipeline
-    output inside Conclusion.solutions and gets joined on there, so nothing is
-    duplicated here. It is the primary key, which is what makes accepting the
-    same solution twice a no-op.
-    """
-
     __tablename__ = "accepted_solutions"
 
     solution_uuid: Mapped[str] = mapped_column(String(36), primary_key=True)

@@ -1,29 +1,17 @@
-"""Pretend to be the Meta Quest: POST a room scan to /receive-data.
-
-Testing only. Point the variables below at a room JSON and some JPEGs, start
-the server, and run it:
-
-    python test/vr_receive_sim.py
-
-The room JSON is the same shape the app writes to room.json in a batch dir,
-so a previous capture can simply be replayed.
-"""
 import base64
 import json
 import os
 
 import httpx
 
-# --- what to send -----------------------------------------------------------
 
 API_URL = "https://bernhackt26.kirchenfeldrobotics.ch/receive-data"
 
-# Must already exist in the database -- see test/company_post_sim.py.
+# must already exist: post company_post_sim.py first
 COMPANY_NAME = "3dMike"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Anchors: {"anchors": [{"label", "position", "rotation", "size"}, ...]}
 ROOM_JSON = os.path.join(HERE, "room.json")
 
 IMAGES = [
@@ -31,18 +19,17 @@ IMAGES = [
     os.path.join(HERE, "img_01.jpg"),
 ]
 
-# describe_room() calls Gemini before answering, so this is not quick.
 TIMEOUT = 300
 
-# --- go ---------------------------------------------------------------------
 
+# same shape the app writes to room.json, so a real capture can be replayed
 with open(ROOM_JSON) as f:
     room = json.load(f)
 
-# Accept a whole payload file too, not just the room part.
 if "room" in room:
     room = room["room"]
 
+# the headset sends jpegs as raw base64, no data-url prefix
 captures = []
 for path in IMAGES:
     with open(path, "rb") as f:

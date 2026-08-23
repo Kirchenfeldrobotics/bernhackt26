@@ -1,14 +1,15 @@
-"""Request/response models for the company endpoints."""
 from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+# what a caller may set on a company
 class CompanyIn(BaseModel):
     name: str
     website: Optional[str] = None
     details: Optional[str] = None
 
+    # a company is looked up by name, so a blank one is unusable
     @field_validator("name")
     @classmethod
     def name_not_blank(cls, v: str) -> str:
@@ -18,6 +19,7 @@ class CompanyIn(BaseModel):
         return v
 
 
+# a company as the api returns it
 class CompanyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -28,9 +30,11 @@ class CompanyOut(BaseModel):
     created_at: datetime
 
 
+# the body the headset posts to /accept-solution
 class AcceptedSolutionIn(BaseModel):
     solution_uuid: str
 
+    # reject blanks before they reach the table as a key
     @field_validator("solution_uuid")
     @classmethod
     def uuid_not_blank(cls, v: str) -> str:
@@ -40,9 +44,11 @@ class AcceptedSolutionIn(BaseModel):
         return v
 
 
+# a company name on its own, for lookups by body
 class CompanyNameIn(BaseModel):
     company_name: str
 
+    # same normalisation every other entry point applies
     @field_validator("company_name")
     @classmethod
     def company_name_not_blank(cls, v: str) -> str:
@@ -52,6 +58,7 @@ class CompanyNameIn(BaseModel):
         return v
 
 
+# the conclusion an accepted solution came from
 class AcceptedSolutionConclusion(BaseModel):
     """The conclusion an accepted solution was proposed for."""
 
@@ -66,8 +73,27 @@ class AcceptedSolutionConclusion(BaseModel):
     created_at: datetime
 
 
+# one accepted solution with its surrounding conclusion
 class AcceptedSolutionOut(BaseModel):
     """One accepted solution, with the conclusion it belongs to."""
 
     solution: dict[str, Any]
     conclusion: AcceptedSolutionConclusion
+
+
+# a stored conclusion row exactly as /receive-data persisted it
+class ConclusionOut(BaseModel):
+    """One conclusion as it was written to the database."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    company_name: str
+    batch: str
+    title: str
+    problem: str
+    solutions: list[dict[str, Any]]
+    savings_10y_chf: str
+    anchor: dict[str, Any]
+    status: str
+    created_at: datetime

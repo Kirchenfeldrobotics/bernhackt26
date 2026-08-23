@@ -1,8 +1,4 @@
-"""Gemini access for the API routes.
-
-One lazily created client, shared by every request. The API key comes from
-GEMINI_API_KEY (see server/.env), the model from GEMINI_MODEL.
-"""
+import asyncio
 import base64
 import json
 import os
@@ -14,35 +10,45 @@ from google.genai import errors, types
 
 DEFAULT_MODEL = "gemini-3.6-flash"
 
-# The VR app sends JPEG captures, and /send-to-gemini takes them the same way:
-# raw base64, no data-URL prefix.
+# generous: the search-grounded call is slow, and a false timeout is worse than none
+REQUEST_TIMEOUT_MS = 300_000
+
+# retry transient failures only; a 4xx would just buy the same rejection
+MAX_ATTEMPTS = 3
+BACKOFF_SECONDS = 2.0
+
 IMAGE_MIME_TYPE = "image/jpeg"
 
 
+# the model could not be reached, or said nothing usable
 class GeminiError(RuntimeError):
-    """Gemini could not be reached, or returned nothing we can pass on."""
+    pass
 
 
+# no api key, so nothing can be sent at all
 class GeminiNotConfigured(GeminiError):
-    """No API key, so no request can be made at all."""
+    pass
 
 
+# one client for the process, built on first use
 @lru_cache(maxsize=1)
 def get_client() -> genai.Client:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise GeminiNotConfigured("GEMINI_API_KEY is not set")
-    return genai.Client(api_key=api_key)
+    return genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS),
+    )
 
 
+# turn base64 captures into image parts, refusing anything malformed
 def decode_images(images: Sequence[str]) -> list[types.Part]:
-    """Turn base64 strings into image parts. Raises ValueError on bad input."""
     parts = []
     for i, b64 in enumerate(images):
         try:
-            # Whitespace is stripped first so line-wrapped base64 still decodes.
             raw = base64.b64decode("".join(b64.split()), validate=True)
-        except ValueError as exc:  # binascii.Error subclasses ValueError
+        except ValueError as exc:
             raise ValueError(f"image {i} is not valid base64") from exc
         if not raw:
             raise ValueError(f"image {i} is empty")
@@ -50,6 +56,7 @@ def decode_images(images: Sequence[str]) -> list[types.Part]:
     return parts
 
 
+# send a prompt to the model and hand back its text
 async def generate(
     prompt: str,
     images: Sequence[str] = (),
@@ -57,24 +64,10 @@ async def generate(
     response_schema: Any = None,
     tools: Sequence[types.Tool] | None = None,
 ) -> str:
-    """Send a prompt plus optional base64 images to Gemini, return its text.
-
-    With a response_schema (a pydantic model or a genai Schema) the answer is
-    constrained to JSON matching it, so no other shape can come back.
-
-    `tools` turns on Gemini-side tools such as search grounding (pass
-    `[types.Tool(google_search=types.GoogleSearch())]`). The Gemini API does not
-    accept `tools` together with a forced JSON `response_schema` in the same
-    request, so a caller that needs both must make two calls -- one grounded and
-    schema-free, one schema-constrained -- rather than passing both here at once.
-
-    Raises ValueError if an image is not decodable, GeminiError if the call
-    fails or comes back without any text.
-    """
-    # Images first, prompt last: Gemini follows the instruction better when it
-    # already has the pictures in context.
+    # pictures before the instruction: the model follows it better that way
     parts = [*decode_images(images), types.Part.from_text(text=prompt)]
 
+    # a schema forces json; tools switch on search grounding. never both at once
     config = None
     if response_schema is not None or tools is not None:
         config = types.GenerateContentConfig(
@@ -83,16 +76,24 @@ async def generate(
             tools=tools,
         )
 
-    try:
-        response = await get_client().aio.models.generate_content(
-            # `or` rather than a getenv default: an env var that is set but
-            # empty (GEMINI_MODEL="") must fall back too.
-            model=model or os.getenv("GEMINI_MODEL") or DEFAULT_MODEL,
-            contents=[types.Content(role="user", parts=parts)],
-            config=config,
-        )
-    except errors.APIError as exc:
-        raise GeminiError(f"Gemini request failed: {exc}") from exc
+    model_name = model or os.getenv("GEMINI_MODEL") or DEFAULT_MODEL
+    contents = [types.Content(role="user", parts=parts)]
+
+    # retry loop, exponential backoff between tries
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            response = await get_client().aio.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+            break
+        except errors.APIError as exc:
+            if attempt == MAX_ATTEMPTS or not _is_transient(exc):
+                raise GeminiError(f"Gemini request failed: {exc}") from exc
+            delay = BACKOFF_SECONDS * (2 ** (attempt - 1))
+            print(f"[gemini] {exc.code} on attempt {attempt}, retrying in {delay:.0f}s")
+            await asyncio.sleep(delay)
 
     text = response.text
     if not text:
@@ -100,6 +101,7 @@ async def generate(
     return text
 
 
+# same as generate, but hand back parsed json
 async def generate_json(
     prompt: str,
     response_schema: Any,
@@ -107,13 +109,6 @@ async def generate_json(
     model: str | None = None,
     tools: Sequence[types.Tool] | None = None,
 ) -> Any:
-    """Same as generate(), but the answer is decoded JSON instead of text.
-
-    The schema is enforced by the API while the answer is being decoded, so
-    malformed JSON should be impossible; it is still checked here rather than
-    handed on as a surprise for the caller. See generate() for why combining
-    `tools` with the forced schema here is the caller's responsibility to avoid.
-    """
     text = await generate(prompt, images, model, response_schema=response_schema, tools=tools)
     try:
         return json.loads(text)
@@ -121,8 +116,13 @@ async def generate_json(
         raise GeminiError(f"Gemini returned malformed JSON: {exc}") from exc
 
 
+# failures a retry can plausibly fix: 5xx and rate limiting
+def _is_transient(exc: errors.APIError) -> bool:
+    return isinstance(exc, errors.ServerError) or getattr(exc, "code", None) == 429
+
+
+# best guess at why an answer came back empty, for the error message
 def _no_text_reason(response: types.GenerateContentResponse) -> str:
-    """Best explanation available for an answer with no text in it."""
     feedback = response.prompt_feedback
     if feedback is not None and feedback.block_reason is not None:
         return f"prompt blocked: {feedback.block_reason}"
