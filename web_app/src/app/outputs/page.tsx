@@ -4,7 +4,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import AppShell from "@/components/AppShell";
-import { formatBatchDate, listGeminiOutputs, type GeminiOutput } from "@/lib/api";
+import {
+  formatBatchDate,
+  formatChf,
+  listGeminiOutputs,
+  totalSavings,
+  type GeminiOutput,
+} from "@/lib/api";
 
 function OutputList() {
   const [outputs, setOutputs] = useState<GeminiOutput[] | null>(null);
@@ -53,8 +59,30 @@ function OutputList() {
                 <span className="rounded-[4px] bg-white/5 px-1.5 text-[12px] leading-[1.4] text-fog">
                   {output.anchors} anchors
                 </span>
+                {output.conclusion !== null && (
+                  <span className="rounded-[4px] bg-white/5 px-1.5 text-[12px] leading-[1.4] text-fog">
+                    {output.conclusion.entries.length}{" "}
+                    {output.conclusion.entries.length === 1 ? "fix" : "fixes"}
+                  </span>
+                )}
               </div>
-              <p className="mt-3 line-clamp-2 text-body-sm leading-body-sm tracking-body-sm text-ash">
+
+              {/* What the scan is worth once it has been analysed; the raw
+                  description is what there is to show until then. */}
+              {output.conclusion !== null ? (
+                <p className="mt-3 text-body-sm leading-body-sm tracking-body-sm text-fog">
+                  <span className="text-paper">
+                    {formatChf(totalSavings(output.conclusion))}
+                  </span>{" "}
+                  over ten years
+                </p>
+              ) : (
+                <p className="mt-3 text-body-sm leading-body-sm tracking-body-sm text-ash">
+                  Not analysed yet
+                </p>
+              )}
+
+              <p className="mt-2 line-clamp-2 text-body-sm leading-body-sm tracking-body-sm text-ash">
                 {output.description}
               </p>
             </Link>
