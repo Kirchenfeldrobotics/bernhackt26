@@ -9,14 +9,19 @@ def save_plan(plan: dict, company_name: str, batch: str, db: Session) -> None:
 
     `plan` is the dict conclusion() returns: {"conclusions": [...]}. Each item
     already groups a problem with its full list of solutions, so this is a
-    direct 1:1 mapping from plan item to DB row -- each solution just gains a
-    sequential `id` within the row's `solutions` list.
+    direct 1:1 mapping from plan item to DB row.
+
+    Each solution gains a uuid4 `id` like every other id in the schema,
+    assigned into `plan` itself rather than
+    into a copy: the caller returns that same dict to the headset, which needs
+    the ids to accept a solution later. A counter scoped to one row would not
+    do -- accepted_solutions is keyed by the id alone, so it has to be unique
+    across every conclusion, not just within one.
     """
     for c in plan.get("conclusions", []):
-        solutions = [
-            {**solution, "id": i}
-            for i, solution in enumerate(c["solutions"], start=1)
-        ]
+        solutions = c["solutions"]
+        for solution in solutions:
+            solution["id"] = models.new_id()
         db.add(
             models.Conclusion(
                 company_name=company_name,

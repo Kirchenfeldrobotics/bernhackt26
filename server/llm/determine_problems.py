@@ -26,7 +26,6 @@ You are a sustainability auditor inspecting the workspace of a single company.
 ## The company
 
 Name: {company_name}
-Category: {company_category}
 Business description:
 {business_description}
 
@@ -91,7 +90,6 @@ def build_prompt(room_description: str, company: models.Company) -> str:
     """Fill the audit prompt with one company's data and its room."""
     return PROMPT_TEMPLATE.format(
         company_name=company.name,
-        company_category=company.category or UNKNOWN,
         business_description=company.details or UNKNOWN,
         room_description=room_description,
         known_object_types=KNOWN_OBJECT_TYPES,

@@ -5,9 +5,8 @@ export const API_URL =
 
 /** A row of the `companies` table, as `/companies` returns it. */
 export type Company = {
-  id: number;
+  id: string;
   name: string;
-  category: string | null;
   website: string | null;
   details: string | null;
   created_at: string;

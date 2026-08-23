@@ -1,4 +1,5 @@
 """ORM models."""
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -8,24 +9,29 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .session import Base
 
 
-class Company(Base):
-    """A company and the category assigned to it.
+def new_id() -> str:
+    """Primary keys are uuid4 text, so an id is known before the row is flushed
+    and stays unique across databases -- no autoincrement counter anywhere."""
+    return str(uuid.uuid4())
 
-    Categories are assigned by company name alone, so the name is the natural
-    key: one row per company, carrying its category.
+
+class Company(Base):
+    """A company and what it does.
+
+    Companies are looked up by name alone, so the name is the natural key: one
+    row per company.
     """
 
     __tablename__ = "companies"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    category: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
     website: Mapped[str | None] = mapped_column(String(512), nullable=True, default=None)
     details: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     def __repr__(self) -> str:
-        return f"<Company {self.name!r} category={self.category!r}>"
+        return f"<Company {self.name!r}>"
 
 
 class Conclusion(Base):
@@ -38,7 +44,7 @@ class Conclusion(Base):
 
     __tablename__ = "conclusions"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     company_name: Mapped[str] = mapped_column(String(255), index=True)
     batch: Mapped[str] = mapped_column(String(64), index=True)
     title: Mapped[str] = mapped_column(String(255))
@@ -60,14 +66,15 @@ class Conclusion(Base):
 class AcceptedSolution(Base):
     """A solution the user accepted in VR.
 
-    Deliberately just the uuid: the solution's content lives with the pipeline
-    output and gets joined on later, so nothing is duplicated here. The uuid is
-    the primary key, which is what makes accepting the same one twice a no-op.
+    Deliberately just the id: the solution's content lives with the pipeline
+    output inside Conclusion.solutions and gets joined on there, so nothing is
+    duplicated here. It is the primary key, which is what makes accepting the
+    same solution twice a no-op.
     """
 
     __tablename__ = "accepted_solutions"
 
-    solution_uuid: Mapped[str] = mapped_column(String(64), primary_key=True)
+    solution_uuid: Mapped[str] = mapped_column(String(36), primary_key=True)
 
     def __repr__(self) -> str:
         return f"<AcceptedSolution {self.solution_uuid!r}>"

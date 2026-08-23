@@ -16,25 +16,25 @@ def main():
     init_db()
 
     with SessionLocal() as db:
-        # 2. Insert a company (category may be filled in later).
+        # 2. Insert a company.
         if not db.scalar(select(models.Company).where(models.Company.name == "Example AG")):
             db.add(models.Company(name="Example AG"))
             db.commit()
 
-        # 3. Assign a category by company name.
+        # 3. Update one by name.
         company = db.scalar(select(models.Company).where(models.Company.name == "Example AG"))
-        company.category = None  # e.g. "Retail" once categories.CATEGORIES is filled
+        company.details = "An example company, added by the scaffold."
         db.commit()
 
-        # 4. Query: everything, by category, and everything not yet categorised.
+        # 4. Query: everything, and everything still missing a description.
         everything = db.scalars(select(models.Company).order_by(models.Company.name)).all()
-        uncategorised = db.scalars(
-            select(models.Company).where(models.Company.category.is_(None))
+        undescribed = db.scalars(
+            select(models.Company).where(models.Company.details.is_(None))
         ).all()
 
-        print(f"{len(everything)} companies, {len(uncategorised)} without a category")
+        print(f"{len(everything)} companies, {len(undescribed)} without a description")
         for c in everything:
-            print(f"  {c.name:<30} {c.category or '-'}")
+            print(f"  {c.name:<30} {c.details or '-'}")
 
 
 if __name__ == "__main__":

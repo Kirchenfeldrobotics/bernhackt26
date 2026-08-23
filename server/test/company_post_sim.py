@@ -18,8 +18,6 @@ API_URL = "https://bernhackt26.kirchenfeldrobotics.ch/companies"
 
 COMPANY = {
     "name": "3dMike",
-    # Left unset: database/categories.py has no vocabulary decided yet.
-    # "category": "Manufacturing",
     "website": "https://3dmike.example.ch",
     "details": (
         "One-man operation run by Mike out of his 14 m2 student dorm room. Six "
