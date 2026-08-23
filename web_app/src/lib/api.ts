@@ -1,16 +1,23 @@
 /**
- * Where the API runs. Paths below are the server's own routes -- /companies,
- * /get-accepted-solutions -- appended to this, with nothing in between: there
- * is no /api prefix on the server, so there is none here either.
+ * The API, reached through this app's own origin. `next.config.ts` forwards
+ * /backend to wherever the server actually runs; the paths below are the
+ * server's own routes -- /companies, /get-accepted-solutions -- appended to it.
  *
- * Point a deployment somewhere else with NEXT_PUBLIC_API_URL, e.g. at a server
- * on your own machine. That server has to allow this app's origin: set
- * ALLOWED_ORIGINS on it, or the browser refuses the request before sending it.
+ * Going through our own origin rather than naming the API host here is what
+ * makes the app work off localhost at all: the browser would otherwise have to
+ * be allowed by the API's CORS allowlist, and is refused before the request is
+ * even sent when it is not. Same-origin requests are not subject to that.
+ *
+ * Set NEXT_PUBLIC_API_URL to call a server directly instead -- useful against a
+ * local one that allows your origin.
  */
-const DEFAULT_API_URL = "https://bernhackt26.kirchenfeldrobotics.ch";
+const DEFAULT_API_URL = "/backend";
 
 // A trailing slash would make every path a double slash, which FastAPI 404s on.
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_URL).replace(/\/+$/, "");
+
+// Naming "/backend" in an error message tells nobody anything.
+const API_LABEL = API_URL.startsWith("/") ? "the API" : API_URL;
 
 // A hung request should fail rather than spin forever behind a "Loading…".
 const TIMEOUT_MS = 30_000;
@@ -77,8 +84,8 @@ function errorMessage(body: string, response: Response): string {
 /** fetch() rejects with a bare "Failed to fetch"; say what that actually means. */
 function networkMessage(cause: unknown): string {
   if (cause instanceof DOMException && cause.name === "TimeoutError")
-    return `${API_URL} did not answer within ${TIMEOUT_MS / 1000} seconds.`;
-  return `Could not reach ${API_URL}. It may be down, or unreachable from here.`;
+    return `${API_LABEL} did not answer within ${TIMEOUT_MS / 1000} seconds.`;
+  return `Could not reach ${API_LABEL}. It may be down, or unreachable from here.`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -106,32 +113,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
-// --- accepted solutions -----------------------------------------------------
+// --- accepted conclusions ---------------------------------------------------
 //
 // `POST /get-accepted-solutions` with {"company_name": …} answers with one row
-// per accepted solution:
+// per accepted conclusion, whole:
 //
-//   [{ solution:   {id, name, url?, description},
-//      conclusion: {id, batch, title, problem, savings_10y_chf, anchor, created_at} }]
+//   [{ id, company_name, batch, title, problem,
+//      solutions: [{name, url?, description}],
+//      savings_10y_chf, anchor, status, created_at }]
 //
-// A conclusion with several accepted solutions therefore repeats across rows.
-// The whole list is regrouped here -- by conclusion, then by scan -- so the
-// components get the shape they actually render and never see the repetition.
+// A conclusion is the unit that gets accepted in VR -- the problem, every fix
+// proposed for it and what they save are one panel there and one card here. The
+// solutions inside it are that conclusion's detail: they are never accepted on
+// their own, and so carry no ids.
 //
-// Only *accepted* solutions come back: a fix nobody took in VR is not in this
-// answer at all.
+// Only *accepted* conclusions come back: one nobody took in VR is not in this
+// answer at all. All that is left to do here is group them by scan.
 
 export type Position = { x: number; y: number; z: number };
 
-/** One accepted fix. `url` is unset for a behavioural one -- it is never invented. */
+/** One fix within a conclusion. `url` is unset for a behavioural one -- it is
+ * never invented. Solutions have no id: the conclusion around them is the unit. */
 export type EntrySolution = {
-  id: string | null;
   name: string;
   description: string | null;
   url: string | null;
 };
 
-/** One conclusion, with the solutions this company accepted for it. */
+/** One accepted conclusion, with every solution proposed for it. */
 export type ConclusionEntry = {
   id: string | null;
   batch: string | null;
@@ -191,7 +200,6 @@ function parseSavings(value: unknown): { amount: number | null; basis: string | 
 function normaliseSolution(raw: unknown): EntrySolution {
   const solution = asRecord(raw);
   return {
-    id: asString(solution.id),
     name: asString(solution.name) ?? "",
     description: asString(solution.description),
     url: asString(solution.url),
@@ -206,44 +214,34 @@ function normalisePosition(raw: unknown): Position | null {
   return x !== null && y !== null && z !== null ? { x, y, z } : null;
 }
 
-/** Collapse the repeated conclusions, keeping each one's accepted solutions together. */
-function groupIntoEntries(rows: unknown): ConclusionEntry[] {
-  if (!Array.isArray(rows)) return [];
+/** One row of the answer -- a whole conclusion -- as the components read it. */
+function toEntry(raw: unknown): ConclusionEntry {
+  const conclusion = asRecord(raw);
+  const anchor = asRecord(conclusion.anchor);
 
-  const byConclusion = new Map<string, ConclusionEntry>();
+  // A solution with no name has nothing to render, so it is dropped rather than
+  // shown as an empty bullet.
+  const solutions = (Array.isArray(conclusion.solutions) ? conclusion.solutions : [])
+    .map(normaliseSolution)
+    .filter((solution) => solution.name !== "");
 
-  for (const [index, raw] of rows.entries()) {
-    const row = asRecord(raw);
-    const conclusion = asRecord(row.conclusion);
-    const solution = normaliseSolution(row.solution);
-    // Without an id there is nothing to group on, so the row stands alone.
-    const key = asString(conclusion.id) ?? `row-${index}`;
+  return {
+    id: asString(conclusion.id),
+    batch: asString(conclusion.batch),
+    createdAt: asString(conclusion.created_at),
+    title: asString(conclusion.title) ?? "Untitled",
+    problem: asString(conclusion.problem) ?? "",
+    solutions,
+    // The ones carrying a link are the things there are to buy.
+    products: solutions.filter((solution) => solution.url !== null),
+    savings: parseSavings(conclusion.savings_10y_chf),
+    anchorLabel: asString(anchor.label),
+    position: normalisePosition(anchor.position),
+  };
+}
 
-    let entry = byConclusion.get(key);
-    if (entry === undefined) {
-      const anchor = asRecord(conclusion.anchor);
-      entry = {
-        id: asString(conclusion.id),
-        batch: asString(conclusion.batch),
-        createdAt: asString(conclusion.created_at),
-        title: asString(conclusion.title) ?? "Untitled",
-        problem: asString(conclusion.problem) ?? "",
-        solutions: [],
-        products: [],
-        savings: parseSavings(conclusion.savings_10y_chf),
-        anchorLabel: asString(anchor.label),
-        position: normalisePosition(anchor.position),
-      };
-      byConclusion.set(key, entry);
-    }
-
-    if (solution.name !== "") {
-      entry.solutions.push(solution);
-      if (solution.url !== null) entry.products.push(solution);
-    }
-  }
-
-  return [...byConclusion.values()];
+function toEntries(rows: unknown): ConclusionEntry[] {
+  return Array.isArray(rows) ? rows.map(toEntry) : [];
 }
 
 /** Group the conclusions by the scan they came out of, newest scan first. */
@@ -311,7 +309,7 @@ export function deleteCompany(name: string) {
 }
 
 /**
- * Every conclusion this company has accepted a solution for, grouped by scan.
+ * Every conclusion this company has accepted in VR, grouped by scan.
  *
  * The company name is the whole payload: `{"company_name": …}`.
  */
@@ -320,7 +318,7 @@ export async function listScans(company: string): Promise<Scan[]> {
     method: "POST",
     body: JSON.stringify({ company_name: company }),
   });
-  return groupIntoScans(groupIntoEntries(rows));
+  return groupIntoScans(toEntries(rows));
 }
 
 /** One scan's conclusions, or null if this company has none from that batch. */
