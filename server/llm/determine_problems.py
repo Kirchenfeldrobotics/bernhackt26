@@ -10,10 +10,15 @@ from sqlalchemy import select
 
 import llm.gemini as gemini
 from database import SessionLocal, models
+from llm.objects import OBJECT_TYPES as Object
 
 # Stands in for a field the company row does not have filled in yet, so the
 # prompt never contains a dangling "None".
 UNKNOWN = "(not available)"
+
+# Rendered once into the prompt so Gemini knows which objects a later stage can
+# actually place a fix against, without being told every problem must use one.
+KNOWN_OBJECT_TYPES = ", ".join(o.value for o in Object)
 
 PROMPT_TEMPLATE = """\
 You are a sustainability auditor inspecting the workspace of a single company.
@@ -21,13 +26,20 @@ You are a sustainability auditor inspecting the workspace of a single company.
 ## The company
 
 Name: {company_name}
-Category: {company_category}
 Business description:
 {business_description}
 
 ## The office space
 
 {room_description}
+
+## What this system can act on
+
+A later stage in this pipeline can place a fix near these object types, if it
+finds one in the room: {known_object_types}. Where a problem plausibly involves
+one of them, mention it by name so it can be grounded to something concrete
+later -- but do not force the connection. Most problems will have nothing to do
+with this list, and that is fine.
 
 ## Your task
 
@@ -78,9 +90,9 @@ def build_prompt(room_description: str, company: models.Company) -> str:
     """Fill the audit prompt with one company's data and its room."""
     return PROMPT_TEMPLATE.format(
         company_name=company.name,
-        company_category=company.category or UNKNOWN,
         business_description=company.details or UNKNOWN,
         room_description=room_description,
+        known_object_types=KNOWN_OBJECT_TYPES,
     )
 
 

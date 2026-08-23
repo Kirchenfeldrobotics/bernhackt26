@@ -12,7 +12,7 @@ from typing import Any, Sequence
 from google import genai
 from google.genai import errors, types
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.6-flash"
 
 # The VR app sends JPEG captures, and /send-to-gemini takes them the same way:
 # raw base64, no data-URL prefix.
@@ -55,11 +55,18 @@ async def generate(
     images: Sequence[str] = (),
     model: str | None = None,
     response_schema: Any = None,
+    tools: Sequence[types.Tool] | None = None,
 ) -> str:
     """Send a prompt plus optional base64 images to Gemini, return its text.
 
     With a response_schema (a pydantic model or a genai Schema) the answer is
     constrained to JSON matching it, so no other shape can come back.
+
+    `tools` turns on Gemini-side tools such as search grounding (pass
+    `[types.Tool(google_search=types.GoogleSearch())]`). The Gemini API does not
+    accept `tools` together with a forced JSON `response_schema` in the same
+    request, so a caller that needs both must make two calls -- one grounded and
+    schema-free, one schema-constrained -- rather than passing both here at once.
 
     Raises ValueError if an image is not decodable, GeminiError if the call
     fails or comes back without any text.
@@ -69,10 +76,11 @@ async def generate(
     parts = [*decode_images(images), types.Part.from_text(text=prompt)]
 
     config = None
-    if response_schema is not None:
+    if response_schema is not None or tools is not None:
         config = types.GenerateContentConfig(
-            response_mime_type="application/json",
+            response_mime_type="application/json" if response_schema is not None else None,
             response_schema=response_schema,
+            tools=tools,
         )
 
     try:
@@ -97,14 +105,16 @@ async def generate_json(
     response_schema: Any,
     images: Sequence[str] = (),
     model: str | None = None,
+    tools: Sequence[types.Tool] | None = None,
 ) -> Any:
     """Same as generate(), but the answer is decoded JSON instead of text.
 
     The schema is enforced by the API while the answer is being decoded, so
     malformed JSON should be impossible; it is still checked here rather than
-    handed on as a surprise for the caller.
+    handed on as a surprise for the caller. See generate() for why combining
+    `tools` with the forced schema here is the caller's responsibility to avoid.
     """
-    text = await generate(prompt, images, model, response_schema=response_schema)
+    text = await generate(prompt, images, model, response_schema=response_schema, tools=tools)
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:
