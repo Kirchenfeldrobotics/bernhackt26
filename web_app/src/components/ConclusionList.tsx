@@ -7,19 +7,20 @@ import {
 } from "@/lib/api";
 
 /**
- * The conclusions a company has accepted solutions for, as a list of fixes.
+ * The conclusions a company accepted in VR, as a list of fixes. One card per
+ * accepted conclusion -- the unit the headset accepts and this app lists.
  *
  * Every entry is read in the same five parts, in this order, and each maps onto
  * one field of what `/get-accepted-solutions` returns:
  *
- *   1. Title         `conclusion.title`
- *   2. Problem       `conclusion.problem`          the negative impact
- *   3. Solutions     the accepted `solution` rows  name + description
+ *   1. Title         `title`
+ *   2. Problem       `problem`            the negative impact
+ *   3. Solutions     `solutions`          name + description
  *   4. Products      those carrying a `url`
- *   5. Money saving  `conclusion.savings_10y_chf`  "|amount|explanation"
+ *   5. Money saving  `savings_10y_chf`    "|amount|explanation"
  *
- * `conclusion.anchor` is where the VR app floats the panel; it sits in the
- * card's footer rather than being dropped.
+ * `anchor` is where the VR app floats the panel; it sits in the card's footer
+ * rather than being dropped.
  */
 
 const EYEBROW = "text-eyebrow leading-eyebrow tracking-eyebrow uppercase";
@@ -47,15 +48,15 @@ function Part({
   );
 }
 
-/** 3. Solutions. Only the ones actually accepted in VR come back. */
+/** 3. Solutions. Every fix proposed for this conclusion. */
 function Solutions({ solutions }: { solutions: EntrySolution[] }) {
   if (solutions.length === 0)
-    return <p className={`${BODY} text-ash`}>No solutions were accepted for this one.</p>;
+    return <p className={`${BODY} text-ash`}>No solutions were proposed for this one.</p>;
 
   return (
     <ul className={`flex list-disc flex-col gap-2 pl-5 marker:text-smoke ${BODY} text-mist`}>
       {solutions.map((solution, index) => (
-        <li key={solution.id ?? index}>
+        <li key={index}>
           {solution.name}
           {solution.description !== null && (
             <Markdown source={solution.description} className="mt-0.5 text-ash" />
@@ -79,7 +80,7 @@ function Products({ products }: { products: EntrySolution[] }) {
   return (
     <ul className="flex flex-col gap-1">
       {products.map((product, index) => (
-        <li key={product.id ?? index}>
+        <li key={index}>
           <a
             href={product.url as string}
             target="_blank"
