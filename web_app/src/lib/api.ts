@@ -12,6 +12,50 @@ export type Company = {
   created_at: string;
 };
 
+/** `Product` in `server/solutions.py`: something to buy, and where to buy it. */
+export type Product = {
+  name: string;
+  url: string;
+};
+
+/** `Position` in `server/solutions.py`: metres, in the MRUK anchors' space. */
+export type Position = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+/**
+ * `ConclusionEntry` in `server/solutions.py`: one fix, with everything the
+ * list shows about it.
+ *
+ * The five parts the entry is read in, in order: `title`, `problem` (the
+ * negative impact), `solutions` (how to fix it), `products` (what to buy) and
+ * `savings_10y_chf` (what it earns). `products` is null on every entry the
+ * server writes today — Gemini has no catalogue, so the field waits for a real
+ * product source instead of being filled with invented shop URLs.
+ */
+export type ConclusionEntry = {
+  title: string;
+  problem: string;
+  solutions: string[];
+  benefit: string;
+  savings_10y_chf: number;
+  savings_basis: string;
+  anchor_label: string;
+  position: Position;
+  placement_reasoning: string;
+  products: Product[] | null;
+};
+
+/** `StoredConclusion` in `server/main.py`: one batch's finished analysis. */
+export type Conclusion = {
+  company: string;
+  created_at: string;
+  problems: string;
+  entries: ConclusionEntry[];
+};
+
 /** One Gemini answer stored on the server by `/receive-data`. */
 export type GeminiOutput = {
   batch: string;
@@ -19,6 +63,8 @@ export type GeminiOutput = {
   images: number;
   anchors: number;
   description: string;
+  /** Null until the analysis has been run for this batch. */
+  conclusion: Conclusion | null;
 };
 
 /** A failed request, carrying the status so callers can tell a 404 apart. */
@@ -100,6 +146,29 @@ export function getGeminiOutput(batch: string) {
   return request<GeminiOutput>(`/gemini-outputs/${encodeURIComponent(batch)}`);
 }
 
+/** The stored conclusion for a batch, or null if it has not been run yet. */
+export async function findConclusion(batch: string): Promise<Conclusion | null> {
+  try {
+    return await request<Conclusion>(
+      `/gemini-outputs/${encodeURIComponent(batch)}/conclusion`,
+    );
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.status === 404) return null;
+    throw cause;
+  }
+}
+
+/**
+ * Run the analysis over a stored scan: problems first, then the solutions they
+ * lead to. Slow — two Gemini calls — and replaces whatever was concluded before.
+ */
+export function runConclusion(batch: string, company: string) {
+  return request<Conclusion>(
+    `/gemini-outputs/${encodeURIComponent(batch)}/conclusion`,
+    { method: "POST", body: JSON.stringify({ company }) },
+  );
+}
+
 /** The signed-in company name, kept in the browser -- there are no passwords. */
 const SESSION_KEY = "company-name";
 
@@ -136,4 +205,24 @@ export function formatBatchDate(iso: string) {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+/**
+ * Savings as Swiss francs. Fixed to de-CH rather than the visitor's locale: the
+ * number is francs whoever is reading it, and the apostrophe grouping is how it
+ * is written here. Rappen are dropped — these are ten-year estimates.
+ */
+const CHF = new Intl.NumberFormat("de-CH", {
+  style: "currency",
+  currency: "CHF",
+  maximumFractionDigits: 0,
+});
+
+export function formatChf(amount: number) {
+  return CHF.format(amount);
+}
+
+/** What the whole conclusion is worth: every entry's ten-year saving added up. */
+export function totalSavings(conclusion: Conclusion) {
+  return conclusion.entries.reduce((sum, entry) => sum + entry.savings_10y_chf, 0);
 }
