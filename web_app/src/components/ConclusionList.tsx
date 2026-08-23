@@ -9,56 +9,51 @@ import {
 /**
  * The conclusions a company has accepted solutions for, as a list of fixes.
  *
- * Every entry is read in the same five parts, in this order, and each maps onto
- * one field of what `/get-accepted-solutions` returns:
+ * One card per conclusion, holding the whole text. Every entry is read in the
+ * same four parts, in this order, and each maps onto one field of what
+ * `/get-accepted-solutions` returns:
  *
- *   1. Title         `conclusion.title`
- *   2. Problem       `conclusion.problem`          the negative impact
- *   3. Solutions     the accepted `solution` rows  name + description
- *   4. Products      those carrying a `url`
- *   5. Money saving  `conclusion.savings_10y_chf`  "|amount|explanation"
+ *   1. Problem       `conclusion.problem`          the negative impact
+ *   2. Solutions     the accepted `solution` rows  name + description
+ *   3. Products      those carrying a `url`
+ *   4. Money saving  `conclusion.savings_10y_chf`  "|amount|explanation"
  *
- * `conclusion.anchor` is where the VR app floats the panel; it sits in the
- * card's footer rather than being dropped.
+ * The title sits above them, unless the page already carries it as its heading.
+ * `conclusion.id` and `conclusion.anchor` are the VR app's business -- an id and
+ * a set of room coordinates say nothing to whoever reads this -- so neither is
+ * shown.
+ *
+ * Everything is white: hierarchy is size and weight, never colour.
  */
 
-const EYEBROW = "text-eyebrow leading-eyebrow tracking-eyebrow uppercase";
+/** A part's label: smaller than the body it introduces, and heavier. */
+const LABEL = "text-caption leading-caption font-[510] text-paper";
 
-const BADGE =
-  "rounded-[4px] bg-white/5 px-1.5 font-mono text-[12px] leading-[1.4] tracking-[-0.013em] text-fog";
+const BODY = "text-body-sm leading-body-sm tracking-body-sm text-paper";
 
-const BODY = "text-body-sm leading-body-sm tracking-body-sm";
-
-/** One of the five parts: a hairline-quiet label over its content. */
-function Part({
-  label,
-  tone = "text-ash",
-  children,
-}: {
-  label: string;
-  tone?: string;
-  children: React.ReactNode;
-}) {
+/** One of the four parts: a quiet label over its content. */
+function Part({ label, children }: { label: string; children: React.ReactNode }) {
+  // first:mt-0 so the card sits tight whether or not a title precedes this.
   return (
-    <section className="mt-6">
-      <h4 className={`${EYEBROW} ${tone}`}>{label}</h4>
+    <section className="mt-6 first:mt-0">
+      <h4 className={LABEL}>{label}</h4>
       <div className="mt-2">{children}</div>
     </section>
   );
 }
 
-/** 3. Solutions. Only the ones actually accepted in VR come back. */
+/** 2. Solutions. Only the ones actually accepted in VR come back. */
 function Solutions({ solutions }: { solutions: EntrySolution[] }) {
   if (solutions.length === 0)
-    return <p className={`${BODY} text-ash`}>No solutions were accepted for this one.</p>;
+    return <p className={BODY}>No solutions were accepted for this one.</p>;
 
   return (
-    <ul className={`flex list-disc flex-col gap-2 pl-5 marker:text-smoke ${BODY} text-mist`}>
+    <ul className={`flex list-disc flex-col gap-2 pl-5 marker:text-paper ${BODY}`}>
       {solutions.map((solution, index) => (
         <li key={solution.id ?? index}>
           {solution.name}
           {solution.description !== null && (
-            <Markdown source={solution.description} className="mt-0.5 text-ash" />
+            <Markdown source={solution.description} className="mt-0.5" />
           )}
         </li>
       ))}
@@ -67,27 +62,26 @@ function Solutions({ solutions }: { solutions: EntrySolution[] }) {
 }
 
 /**
- * 4. Products. A solution carrying a link is a thing to buy; one without is a
+ * 3. Products. A solution carrying a link is a thing to buy; one without is a
  * behavioural fix. A URL is never invented, so an empty list is a real answer.
  */
 function Products({ products }: { products: EntrySolution[] }) {
   if (products.length === 0)
-    return (
-      <p className={`${BODY} text-ash`}>Nothing to buy — these fixes are behavioural.</p>
-    );
+    return <p className={BODY}>Nothing to buy — these fixes are behavioural.</p>;
 
   return (
     <ul className="flex flex-col gap-1">
       {products.map((product, index) => (
         <li key={product.id ?? index}>
+          {/* A link is set apart by its underline rather than by a colour. */}
           <a
             href={product.url as string}
             target="_blank"
             rel="noreferrer noopener"
-            className={`${BODY} text-mist underline decoration-smoke underline-offset-2 transition-colors hover:text-paper hover:decoration-fog`}
+            className={`${BODY} underline decoration-white/30 underline-offset-2 transition-colors hover:decoration-white`}
           >
             {product.name}
-            <span aria-hidden className="ml-1 text-ash">
+            <span aria-hidden className="ml-1">
               ↗
             </span>
           </a>
@@ -97,82 +91,65 @@ function Products({ products }: { products: EntrySolution[] }) {
   );
 }
 
-function Entry({ entry, index }: { entry: ConclusionEntry; index: number }) {
-  const { position } = entry;
-
+function Entry({ entry, showTitle }: { entry: ConclusionEntry; showTitle: boolean }) {
   return (
     <li className="rounded-xl border border-graphite bg-carbon p-6">
-      {/* 1. Title. The index is technical metadata, so it is monospaced. */}
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="font-mono text-[12px] leading-[1.4] tracking-[-0.013em] text-ash">
-          {String(index + 1).padStart(2, "0")}
-        </span>
-        <h3 className="text-body-lg leading-body-lg tracking-body-lg text-paper">
+      {showTitle && (
+        <h3 className="mb-6 text-body-lg leading-body-lg tracking-body-lg text-paper">
           {entry.title}
         </h3>
-      </div>
+      )}
 
-      {/* 2. Problem — the negative impact. Coral red is the system's colour for
-          something being wrong, used here on the label alone. */}
+      {/* 1. Problem — the negative impact. */}
       {entry.problem !== "" && (
-        <Part label="Problem" tone="text-coral-red/80">
+        <Part label="Problem">
           <Markdown source={entry.problem} />
         </Part>
       )}
 
-      {/* 3. Solutions. */}
+      {/* 2. Solutions. */}
       <Part label="Solutions">
         <Solutions solutions={entry.solutions} />
       </Part>
 
-      {/* 4. Products — links out, or nothing to buy. */}
+      {/* 3. Products — links out, or nothing to buy. */}
       <Part label="Products">
         <Products products={entry.products} />
       </Part>
 
-      {/* 5. Money saving. The payoff, so it gets the largest type on the card. */}
+      {/* 4. Money saving. The payoff, so it gets the largest type on the card. */}
       <Part label="Money saving">
         <p className="flex flex-wrap items-baseline gap-2">
           <span className="text-subheading leading-subheading tracking-subheading text-paper">
             {formatChf(entry.savings.amount)}
           </span>
           {entry.savings.amount !== null && (
-            <span className={`${BODY} text-fog`}>over ten years</span>
+            <span className={BODY}>over ten years</span>
           )}
         </p>
         {entry.savings.basis !== null && (
-          <p className={`mt-1 ${BODY} text-ash`}>{entry.savings.basis}</p>
+          <p className={`mt-1 ${BODY}`}>{entry.savings.basis}</p>
         )}
       </Part>
-
-      {/* Where the VR app floats this panel. Metadata, so it stays monospaced
-          and out of the reading order of the five parts above. */}
-      {(entry.anchorLabel !== null || position !== null) && (
-        <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-graphite pt-4">
-          {entry.anchorLabel !== null && <span className={BADGE}>{entry.anchorLabel}</span>}
-          {position !== null && (
-            <span className={BADGE}>
-              {position.x.toFixed(2)}, {position.y.toFixed(2)}, {position.z.toFixed(2)}
-            </span>
-          )}
-        </div>
-      )}
     </li>
   );
 }
 
-export default function ConclusionList({ entries }: { entries: ConclusionEntry[] }) {
+export default function ConclusionList({
+  entries,
+  showTitles = true,
+}: {
+  entries: ConclusionEntry[];
+  /** Off when the page heading is already this conclusion's title. */
+  showTitles?: boolean;
+}) {
   if (entries.length === 0)
-    return (
-      <p className={`${BODY} text-ash`}>
-        Nothing has been accepted for this scan yet.
-      </p>
-    );
+    return <p className={BODY}>Nothing has been accepted for this scan yet.</p>;
 
   return (
     <ul className="flex flex-col gap-2">
       {entries.map((entry, index) => (
-        <Entry key={entry.id ?? index} entry={entry} index={index} />
+        <Entry key={entry.id ?? index} entry={entry} showTitle={showTitles} />
       ))}
     </ul>
   );
@@ -188,7 +165,7 @@ export function ConclusionTotals({ entries }: { entries: ConclusionEntry[] }) {
       <span className="text-heading-sm leading-heading-sm tracking-heading-sm text-paper">
         {total === null ? `${count} ${count === 1 ? "fix" : "fixes"}` : formatChf(total)}
       </span>
-      <span className={`${BODY} text-fog`}>
+      <span className={BODY}>
         {total === null
           ? "no savings figure given"
           : `over ten years, across ${count} ${count === 1 ? "fix" : "fixes"}`}
