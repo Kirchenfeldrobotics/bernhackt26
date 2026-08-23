@@ -1,12 +1,9 @@
-"""Object type definitions for room-scan detections/annotations."""
-
 from enum import Enum
 
-__all__ = ["OBJECT_TYPES"]
+__all__ = ["ObjectType"]
 
 
-class OBJECT_TYPES(str, Enum):
-    """Detectable object types."""
-
+# objects a later stage can actually place a fix against
+class ObjectType(str, Enum):
     TRASHES = "Trashes"
     TABLES = "Tables"

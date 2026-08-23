@@ -1,18 +1,7 @@
-"""Create a sample company through /companies, for testing the pipeline.
-
-Testing only. Start the server and run it:
-
-    python test/company_post_sim.py
-
-The route upserts by name, so running it twice is harmless -- the second run
-just updates 3dMike's details. Post this before test/vr_receive_sim.py, which
-sends a room scan referencing the same company_name.
-"""
 import json
 
 import httpx
 
-# --- what to send -----------------------------------------------------------
 
 API_URL = "https://bernhackt26.kirchenfeldrobotics.ch/companies"
 
@@ -36,11 +25,11 @@ COMPANY = {
 
 TIMEOUT = 30
 
-# --- go ---------------------------------------------------------------------
 
 print(f"POST {API_URL}")
 print(f"  {COMPANY['name']}: {len(COMPANY['details'])} chars of description")
 
+# upserts by name, so running this twice is harmless
 response = httpx.post(API_URL, json=COMPANY, timeout=TIMEOUT)
 
 print(f"\n{response.status_code}")

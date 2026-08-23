@@ -1,15 +1,14 @@
-from dotenv import load_dotenv
-from pydantic import BaseModel
 from typing import List, Optional
 
-import llm.gemini as gemini
-from llm.objects import OBJECT_TYPES as Object
+from pydantic import BaseModel, field_validator
 
-load_dotenv()
+import llm.gemini as gemini
+from llm.objects import ObjectType
 
 __all__ = ["Anchor", "DescribedAnchor", "Room", "RoomDescription", "Payload", "describe_room"]
 
 
+# one mruk anchor exactly as the headset reports it
 class Anchor(BaseModel):
     label: str
     position: List[float]
@@ -17,30 +16,44 @@ class Anchor(BaseModel):
     size: Optional[List[float]] = None
 
 
+# an anchor once the model has said something about it
 class DescribedAnchor(Anchor):
     """An Anchor plus what Gemini made of it (or of something it found on its own)."""
 
     details: str
 
 
+# the room as scanned
 class Room(BaseModel):
     anchors: List[Anchor]
 
 
+# what stage one returns
 class RoomDescription(BaseModel):
     """Every anchor Gemini was given, plus anything further it found in the images."""
 
     anchors: List[DescribedAnchor]
 
 
+# the body the headset posts to /receive-data
 class Payload(BaseModel):
     room: Room
     captures: List[str]
     company_name: str
 
+    # same normalisation the company endpoints apply
+    @field_validator("company_name")
+    @classmethod
+    def company_name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("company_name must not be empty")
+        return v
 
-async def describe_room(room: Room, captures: List[str], batch_dir: str) -> dict:
-    object_types = ", ".join(o.value for o in Object)
+
+# stage one: turn anchors plus photos into a described inventory of the room
+async def describe_room(room: Room, captures: List[str]) -> dict:
+    object_types = ", ".join(o.value for o in ObjectType)
     anchors_json = [anchor.model_dump() for anchor in room.anchors]
 
     prompt = (
@@ -57,6 +70,7 @@ async def describe_room(room: Room, captures: List[str], batch_dir: str) -> dict
         - Position and rotation stay in Meters, in the same coordinate space as the anchors above."""
     )
 
+    # the only stage that sends the images
     data = await gemini.generate_json(prompt, RoomDescription, images=captures)
     try:
         description = RoomDescription.model_validate(data)

@@ -1,41 +1,17 @@
-"""Step 3 of the analysis pipeline: turn problems into placed, costed, real-product
-conclusions.
-
-Takes the problem list determine_problems() produced plus the MRUK anchors the
-Meta Quest scanned, and asks Gemini for concrete, real-product fixes -- each one
-pinned to a spot in the room so the VR app knows where to show it.
-
-    plan = await conclusion(payload.room.model_dump(), problems)
-    for c in plan["conclusions"]:
-        print(c["title"], c["anchor"]["position"], c["savings_10y_chf"])
-
-The Gemini API does not accept a forced-JSON `response_schema` together with a
-search `tools` grounding call in the same request -- see gemini.generate()'s
-docstring. So this module makes two calls:
-
-1. `_research()` -- schema-free, with the search tool switched on, asking Gemini
-   to find real, currently purchasable products for the problems at hand and
-   report what it found as plain text, including any source URLs.
-2. `conclusion()`'s main call -- schema-constrained, no tools, that folds that
-   research text (plus the problems and anchors) into the final ConclusionPlan.
-
-`product_url` stays optional: search does not always turn up a clean source link,
-and the second call is told not to invent one when the research did not supply it.
-"""
 import json
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
 from google.genai import types
+from pydantic import BaseModel, Field
 
 import llm.gemini as gemini
 
-# Keeps one runaway answer from filling the room with panels.
 MAX_CONCLUSIONS = 8
 
 SEARCH_TOOLS = [types.Tool(google_search=types.GoogleSearch())]
 
 
+# a point in the anchors' world space, in metres
 class Position(BaseModel):
     """A point in the same world space the MRUK anchors use, in metres."""
 
@@ -44,6 +20,7 @@ class Position(BaseModel):
     z: float
 
 
+# one fix for a problem, product or behavioural
 class Solution(BaseModel):
     """One fix for a problem -- usually a real product, sometimes a written one."""
 
@@ -63,6 +40,7 @@ class Solution(BaseModel):
     )
 
 
+# where a conclusion's panel floats in the room
 class Anchor(BaseModel):
     """Where in the room a conclusion's explanation panel belongs."""
 
@@ -75,6 +53,7 @@ class Anchor(BaseModel):
     )
 
 
+# one problem and every fix found for it, as shown on a vr panel
 class Conclusion(BaseModel):
     """One problem and every fix found for it, ready to be shown on a panel in the VR app.
 
@@ -104,6 +83,7 @@ class Conclusion(BaseModel):
     )
 
 
+# the whole structured answer stage three returns
 class ConclusionPlan(BaseModel):
     """The whole answer: every conclusion found for this room."""
 
@@ -239,11 +219,8 @@ problems support fewer than {max_conclusions} good conclusions, return fewer.
 """
 
 
+# callers pass anchors as text, a dict, a list or a Room; accept all four
 def _normalise_anchors(anchors_json: Any) -> tuple[str, int]:
-    """Accept the anchors as JSON text, a dict, a list or a pydantic Room.
-
-    Returns them pretty-printed for the prompt, plus how many there are.
-    """
     if isinstance(anchors_json, str):
         try:
             data = json.loads(anchors_json)
@@ -254,7 +231,6 @@ def _normalise_anchors(anchors_json: Any) -> tuple[str, int]:
     else:
         data = anchors_json
 
-    # Either the whole room object ({"anchors": [...]}) or the bare list.
     anchors = data.get("anchors") if isinstance(data, dict) else data
     if not isinstance(anchors, list) or not anchors:
         raise ValueError("anchors_json must contain at least one anchor")
@@ -262,43 +238,8 @@ def _normalise_anchors(anchors_json: Any) -> tuple[str, int]:
     return json.dumps(anchors, indent=2, default=str), len(anchors)
 
 
-def build_research_prompt(anchors_json: Any, problems: str) -> str:
-    """Fill the web-research prompt with one room's anchors and its problems."""
-    anchors_text, _ = _normalise_anchors(anchors_json)
-    return RESEARCH_PROMPT_TEMPLATE.format(
-        problems=problems.strip(),
-        anchors_json=anchors_text,
-        max_conclusions=MAX_CONCLUSIONS,
-    )
-
-
-def build_prompt(anchors_json: Any, problems: str, research: str) -> str:
-    """Fill the final structuring prompt with the room, its problems and the research."""
-    anchors_text, _ = _normalise_anchors(anchors_json)
-    return PROMPT_TEMPLATE.format(
-        problems=problems.strip(),
-        anchors_json=anchors_text,
-        research=research.strip(),
-        max_conclusions=MAX_CONCLUSIONS,
-    )
-
-
+# stage three: research real products for the problems, then place each fix in the room
 async def conclusion(anchors_json: Any, problems: str) -> dict:
-    """Find real-product green fixes for an office and pin each one to a spot in the room.
-
-    `anchors_json` is the MRUK anchor data from the headset (JSON text, a dict, a
-    list or a Room model); `problems` is the text determine_problems() returned.
-
-    Makes two Gemini calls -- an ungrounded search-tool call to research real
-    products, then a schema-constrained call with no tools that structures the
-    result -- because the Gemini API does not allow combining the two in one
-    request (see the module docstring).
-
-    Returns {"conclusions": [...]}, already parsed and validated against the
-    schema. Raises ValueError on unusable input and gemini.GeminiError if either
-    call cannot be reached or the final one answers with something the schema
-    rejects.
-    """
     problems = problems.strip()
     if not problems:
         raise ValueError("problems must not be empty")
@@ -310,6 +251,7 @@ async def conclusion(anchors_json: Any, problems: str) -> dict:
         anchors_json=anchors_text,
         max_conclusions=MAX_CONCLUSIONS,
     )
+    # grounded call first: search cannot be combined with a forced schema
     research = await gemini.generate(research_prompt, tools=SEARCH_TOOLS)
 
     prompt = PROMPT_TEMPLATE.format(
@@ -319,8 +261,7 @@ async def conclusion(anchors_json: Any, problems: str) -> dict:
         max_conclusions=MAX_CONCLUSIONS,
     )
 
-    # The schema is enforced while the answer is decoded, so the two steps above
-    # happen in the model's thinking and only the JSON comes back.
+    # then a schema-locked call that folds the research into the final plan
     data = await gemini.generate_json(prompt, ConclusionPlan)
 
     try:

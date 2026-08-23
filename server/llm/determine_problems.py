@@ -1,24 +1,10 @@
-"""Step 1 of the analysis pipeline: name the sustainability problems in a room.
-
-Takes a room description plus a company name, looks the company's business
-description up in the database, and asks Gemini what is wrong. Deliberately
-problems only -- a later prompt turns this output into solutions.
-
-    problems = await determine_problems(room_description, "Beispiel AG")
-"""
-from sqlalchemy import select
-
 import llm.gemini as gemini
-from database import SessionLocal, models
-from llm.objects import OBJECT_TYPES as Object
+from database import SessionLocal, models, persistence
+from llm.objects import ObjectType
 
-# Stands in for a field the company row does not have filled in yet, so the
-# prompt never contains a dangling "None".
 UNKNOWN = "(not available)"
 
-# Rendered once into the prompt so Gemini knows which objects a later stage can
-# actually place a fix against, without being told every problem must use one.
-KNOWN_OBJECT_TYPES = ", ".join(o.value for o in Object)
+KNOWN_OBJECT_TYPES = ", ".join(o.value for o in ObjectType)
 
 PROMPT_TEMPLATE = """\
 You are a sustainability auditor inspecting the workspace of a single company.
@@ -82,12 +68,13 @@ nothing else: no preamble, no summary, no closing remarks.
 """
 
 
+# no company of that name is stored
 class CompanyNotFound(LookupError):
-    """No company of that name is in the database."""
+    pass
 
 
+# fill the auditor prompt with one company and its room
 def build_prompt(room_description: str, company: models.Company) -> str:
-    """Fill the audit prompt with one company's data and its room."""
     return PROMPT_TEMPLATE.format(
         company_name=company.name,
         business_description=company.details or UNKNOWN,
@@ -96,15 +83,8 @@ def build_prompt(room_description: str, company: models.Company) -> str:
     )
 
 
+# stage two: name the sustainability problems, deliberately without solutions
 async def determine_problems(room_description: str, company_name: str) -> str:
-    """Find the sustainability problems in a company's office space.
-
-    Reads the company's business description from the database itself, so the
-    caller only needs the two strings. Returns Gemini's problem list.
-
-    Raises ValueError on empty input, CompanyNotFound if the name is unknown,
-    and gemini.GeminiError if the model cannot be reached or says nothing.
-    """
     room_description = room_description.strip()
     company_name = company_name.strip()
     if not room_description:
@@ -112,10 +92,9 @@ async def determine_problems(room_description: str, company_name: str) -> str:
     if not company_name:
         raise ValueError("company_name must not be empty")
 
-    # The prompt is built inside the session and the call made outside it, so no
-    # database connection is held open across the slow request to Gemini.
+    # prompt built inside the session, the slow call made outside it
     with SessionLocal() as db:
-        company = db.scalar(select(models.Company).where(models.Company.name == company_name))
+        company = persistence.find_company(db, company_name)
         if company is None:
             raise CompanyNotFound(f"no company named {company_name!r}")
         prompt = build_prompt(room_description, company)
