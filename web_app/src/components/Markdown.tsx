@@ -64,7 +64,7 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
       return (
         <code
           key={key}
-          className="rounded-[4px] bg-white/5 px-1 font-mono text-[0.9em] text-mist"
+          className="rounded-[4px] bg-white/5 px-1 font-mono text-[0.9em] text-paper"
         >
           {token.slice(1, -1)}
         </code>
@@ -78,7 +78,7 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
           href={link[2]}
           target="_blank"
           rel="noreferrer noopener"
-          className="text-mist underline decoration-smoke underline-offset-2 transition-colors hover:text-paper hover:decoration-fog"
+          className="text-paper underline decoration-white/30 underline-offset-2 transition-colors hover:decoration-white"
         >
           {link[1]}
         </a>
@@ -167,7 +167,7 @@ export default function Markdown({
   return (
     // Blocks carry their own top margin, so a card can sit tight around this.
     <div
-      className={`text-body-sm leading-body-sm tracking-body-sm text-mist [&>*:first-child]:mt-0 ${className}`}
+      className={`text-body-sm leading-body-sm tracking-body-sm text-paper [&>*:first-child]:mt-0 ${className}`}
     >
       {blocks.map((block, index) => {
         const key = `b-${index}`;
@@ -192,7 +192,7 @@ export default function Markdown({
           return (
             <Tag
               key={key}
-              className={`mt-3 flex flex-col gap-1 pl-5 marker:text-ash ${
+              className={`mt-3 flex flex-col gap-1 pl-5 marker:text-paper ${
                 block.ordered ? "list-decimal" : "list-disc"
               }`}
             >

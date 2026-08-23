@@ -186,6 +186,7 @@ async def receive_data(payload: Payload) -> dict:
         traceback.print_exc()
         print(f"[{stamp}] failed to persist conclusions to the database")
 
+    # written last: save_plan stamps the solution ids into plan first
     await run_in_threadpool(_write_json, os.path.join(batch_dir, "plan.json"), plan)
 
     files = await run_in_threadpool(_list_batch_files, batch_dir)
@@ -331,60 +332,91 @@ def delete_company(name: str, db: Session = Depends(get_db)) -> dict:
     return {"status": "deleted", "name": company.name, "conclusions_deleted": removed}
 
 
-# the row the headset means, or a 404 naming the id it sent
-def _get_conclusion(db: Session, conclusion_id: str) -> models.Conclusion:
-    conclusion = db.get(models.Conclusion, conclusion_id)
-    if conclusion is None:
-        raise HTTPException(status_code=404, detail=f"no conclusion with id {conclusion_id!r}")
-    return conclusion
+# true if any stored conclusion carries this solution id
+def _solution_exists(db: Session, solution_id: str) -> bool:
+    for stored in db.scalars(select(models.Conclusion)):
+        for solution in stored.solutions or []:
+            if solution.get("id") == solution_id:
+                return True
+    return False
 
 
-# the headset marks a conclusion as chosen; repeat accepts are deliberate no-ops
-@app.post("/accept-solution", response_model=schemas.ConclusionOut)
-def accept_solution(
-    payload: schemas.AcceptedConclusionIn, db: Session = Depends(get_db)
-) -> models.Conclusion:
-    """Record a conclusion the user accepted in VR.
+# the headset marks a solution as chosen; repeat accepts are deliberate no-ops
+@app.post("/accept-solution")
+def accept_solution(payload: schemas.AcceptedSolutionIn, db: Session = Depends(get_db)) -> dict:
+    """Record a solution the user accepted in VR.
 
-    A conclusion is the unit that gets accepted: the problem, its solutions and
-    its saving are one panel in the headset and one card in the web app. The
-    solutions inside it are that conclusion's detail and are never accepted
-    separately, which is why they carry no ids.
-
-    Accepting the same conclusion again is a no-op, so a headset on a flaky link
-    can retry without the second attempt looking like a failure.
+    Accepting the same uuid again is a no-op, so a headset on a flaky link can
+    retry without the second attempt looking like a failure.
     """
-    conclusion = _get_conclusion(db, payload.conclusion_id)
-    conclusion.status = models.STATUS_ACCEPTED
+    if db.get(models.AcceptedSolution, payload.solution_uuid) is None:
+        if not _solution_exists(db, payload.solution_uuid):
+            raise HTTPException(
+                status_code=404, detail=f"no solution with id {payload.solution_uuid!r}"
+            )
+        db.add(models.AcceptedSolution(solution_uuid=payload.solution_uuid))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+
+    return {"status": "ok", "solution_uuid": payload.solution_uuid}
+
+
+# the headset un-chooses a solution
+@app.delete("/delete-solution/{solution_uuid}")
+def delete_solution(solution_uuid: str, db: Session = Depends(get_db)) -> dict:
+    """Drop a solution from the accepted list."""
+    accepted = db.get(models.AcceptedSolution, solution_uuid)
+    if accepted is None:
+        raise HTTPException(status_code=404, detail=f"solution {solution_uuid!r} was not accepted")
+    db.delete(accepted)
     db.commit()
-    db.refresh(conclusion)
-    return conclusion
+    return {"status": "deleted", "solution_uuid": solution_uuid}
 
 
-# the headset un-chooses a conclusion
-@app.delete("/delete-solution/{conclusion_id}", response_model=schemas.ConclusionOut)
-def delete_solution(conclusion_id: str, db: Session = Depends(get_db)) -> models.Conclusion:
-    """Drop a conclusion from the accepted list.
-
-    Undoing an accept that never happened is a no-op for the same reason
-    accepting twice is: the headset may be retrying, and the end state is what
-    it asked for either way.
-    """
-    conclusion = _get_conclusion(db, conclusion_id)
-    conclusion.status = models.STATUS_IN_PROGRESS
-    db.commit()
-    db.refresh(conclusion)
-    return conclusion
-
-
-# every conclusion this company accepted in VR, oldest first
-@app.post("/get-accepted-solutions", response_model=List[schemas.ConclusionOut])
+# everything this company has accepted, with the conclusion each came from
+@app.post("/get-accepted-solutions", response_model=List[schemas.AcceptedSolutionOut])
 def get_accepted_solutions(
     payload: schemas.CompanyNameIn, db: Session = Depends(get_db)
-) -> list[models.Conclusion]:
-    """Every conclusion this company has accepted, whole.
+) -> list[schemas.AcceptedSolutionOut]:
+    """Every solution this company has accepted, with the conclusion around it.
 
-    One row per accepted conclusion, with its solutions inline -- the web app
-    renders each as one card and does no regrouping.
+    Solutions live inside each conclusion's JSON column rather than in a table
+    of their own, so the mapping is: collect the company's solution ids, ask the
+    database which of them were accepted, then keep those.
     """
-    return persistence.list_conclusions(db, payload.company_name, accepted_only=True)
+    conclusions = db.scalars(
+        select(models.Conclusion)
+        .where(func.lower(models.Conclusion.company_name) == payload.company_name.lower())
+        .order_by(models.Conclusion.created_at, models.Conclusion.id)
+    ).all()
+
+    # solutions live in a json column, so gather their ids in python first
+    solution_ids = [
+        solution["id"]
+        for conclusion in conclusions
+        for solution in conclusion.solutions or []
+        if solution.get("id") is not None
+    ]
+    if not solution_ids:
+        return []
+
+    # then let the database say which of those were actually accepted
+    accepted = set(
+        db.scalars(
+            select(models.AcceptedSolution.solution_uuid).where(
+                models.AcceptedSolution.solution_uuid.in_(solution_ids)
+            )
+        ).all()
+    )
+
+    return [
+        schemas.AcceptedSolutionOut(
+            solution=solution,
+            conclusion=schemas.AcceptedSolutionConclusion.model_validate(conclusion),
+        )
+        for conclusion in conclusions
+        for solution in conclusion.solutions or []
+        if solution.get("id") in accepted
+    ]

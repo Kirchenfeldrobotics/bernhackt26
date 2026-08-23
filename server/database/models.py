@@ -14,12 +14,6 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
-# a conclusion is the unit the headset accepts, and status is how that is
-# recorded: every conclusion starts unaccepted and moves between these two
-STATUS_IN_PROGRESS = "in_progress"
-STATUS_ACCEPTED = "accepted"
-
-
 # a company and what it does; the name is the natural key
 class Company(Base):
     __tablename__ = "companies"
@@ -34,8 +28,7 @@ class Company(Base):
         return f"<Company {self.name!r}>"
 
 
-# one problem found in a company's office plus every fix proposed for it.
-# this is what the headset accepts and what the web app lists once it has.
+# one problem found in a company's office plus every fix proposed for it
 class Conclusion(Base):
     __tablename__ = "conclusions"
 
@@ -44,14 +37,22 @@ class Conclusion(Base):
     batch: Mapped[str] = mapped_column(String(64), index=True)
     title: Mapped[str] = mapped_column(String(255))
     problem: Mapped[str] = mapped_column(Text)
-    # no solutions table: they live here as json, as the model wrote them. they
-    # carry no ids of their own -- the conclusion around them is what is accepted
+    # no solutions table: they live here as json, keyed by the id save_plan stamps
     solutions: Mapped[list[dict[str, Any]]] = mapped_column(MutableList.as_mutable(JSON))
     savings_10y_chf: Mapped[str] = mapped_column(Text)
     anchor: Mapped[dict[str, Any]] = mapped_column(JSON)
-    # STATUS_IN_PROGRESS until the headset accepts it, STATUS_ACCEPTED after
-    status: Mapped[str] = mapped_column(String(32), default=STATUS_IN_PROGRESS, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="in_progress")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     def __repr__(self) -> str:
         return f"<Conclusion {self.id} company={self.company_name!r} batch={self.batch!r}>"
+
+
+# a solution the headset marked as chosen, by id alone
+class AcceptedSolution(Base):
+    __tablename__ = "accepted_solutions"
+
+    solution_uuid: Mapped[str] = mapped_column(String(36), primary_key=True)
+
+    def __repr__(self) -> str:
+        return f"<AcceptedSolution {self.solution_uuid!r}>"

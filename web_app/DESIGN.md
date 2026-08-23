@@ -27,7 +27,7 @@ a component.
 | `mist` | `#d0d6e0` | body text |
 | `bone` / `paper` | `#e5e5e6` / `#ffffff` | headings, emphasis |
 | `acid-lime` | `#e4f222` | the primary action |
-| `coral-red` | `#eb5757` | errors, destructive actions, the *problem* label |
+| `coral-red` | `#eb5757` | errors and destructive actions, outside the conclusion views |
 
 **The chromatic rule: acid lime appears at most once per view.** It marks the one
 action that view exists for — *Create* on the start page, *Save* in settings,
@@ -36,17 +36,17 @@ button drops to a ghost button, because the view's purpose is now reading the
 list, not producing it.
 
 Coral red is semantic, not decorative: something is wrong. That covers request
-errors, the delete flow, and the `Problem` label in a conclusion entry — where it
-is the label only, never the body text.
+errors and the delete flow on the start and settings pages.
 
-Everything else stays monochrome. The savings figures are the payoff of the whole
-app and still get no colour; they earn attention through size and `text-paper`.
+The conclusion views take no colour at all — not even for a failure, not even on
+the `Problem` label. Every word on them is `text-paper`, and hierarchy is carried
+by size and weight alone. The savings figures are the payoff of the whole app and
+still get no colour; they earn attention through size.
 
 ### Type
 
 | Token | Size / leading / tracking |
 | --- | --- |
-| `eyebrow` | 11px / 1.2 / +0.08em, always uppercase |
 | `caption` | 13px / 1.2 |
 | `body-sm` | 15px / 1.6 / −0.165px |
 | `body-lg` | 20px / 1.33 / −0.24px |
@@ -55,12 +55,13 @@ app and still get no colour; they earn attention through size and `text-paper`.
 | `heading` | 48px / 1 / −1.056px |
 
 Inter Variable is the interface face. Berkeley Mono is not freely
-distributable, so JetBrains Mono stands in for it and is reserved for technical
-metadata — batch stamps, entry indices, anchor labels, coordinates. If a value
-is something a machine produced and a human only checks, it is monospaced.
+distributable, so JetBrains Mono stands in for it and is reserved for values that
+really are code — inline `code` in rendered markdown. The conclusion views show
+no machine metadata at all, so nothing else on them is monospaced.
 
-`eyebrow` was added for the conclusion list: it is the label that names each part
-of an entry without competing with the entry's own heading.
+The label naming each part of an entry sits on `caption`, in `font-[510]`:
+sentence case, no letter-spacing, one step below the body it introduces. Nothing
+in these views is set in capitals.
 
 ### Space, radius, elevation
 
@@ -91,22 +92,26 @@ in [`src/components/ConclusionList.tsx`](src/components/ConclusionList.tsx) and
 is rendered by
 [`src/app/outputs/[batch]/page.tsx`](src/app/outputs/[batch]/page.tsx).
 
-### The five parts
+### The four parts
 
-Every entry is read in the same five parts, in this order. Each maps onto one
-field of what `POST /get-accepted-solutions` returns:
+One card holds a conclusion's whole text. Every entry is read in the same four
+parts, in this order, and each maps onto one field of what
+`POST /get-accepted-solutions` returns:
 
 | # | Part | Field | Rendering |
 | --- | --- | --- | --- |
-| 1 | **Title** | `conclusion.title` | `body-lg` in `text-paper`, preceded by a monospaced index (`01`, `02`, …). |
-| 2 | **Problem** | `conclusion.problem` | The negative impact. Label in `coral-red/80`, body in `text-mist`. |
-| 3 | **Solutions** | the accepted `solution` rows | One bullet per fix, `list-disc` with `marker:text-smoke`, each with its description beneath in `text-ash`. |
-| 4 | **Products** | the solutions carrying a `url` | Links out to where each thing is bought. |
-| 5 | **Money saving** | `conclusion.savings_10y_chf` | `subheading` in `text-paper`, the largest type on the card, with the basis beneath in `text-ash`. |
+| 1 | **Problem** | `conclusion.problem` | The negative impact. Label and body both `text-paper`. |
+| 2 | **Solutions** | the accepted `solution` rows | One bullet per fix, `list-disc`, each with its description beneath. |
+| 3 | **Products** | the solutions carrying a `url` | Links out to where each thing is bought. |
+| 4 | **Money saving** | `conclusion.savings_10y_chf` | `subheading`, the largest type on the card, with the basis beneath. |
 
-`conclusion.anchor` is what the VR app needs to float the panel in the room. It
-is not dropped: the label and coordinates sit in a monospaced footer below a
-`border-graphite` rule, out of the reading order of the five parts.
+`conclusion.title` sits above them at `body-lg` — or, when a scan holds a single
+conclusion, as the page's own `heading-sm` instead, so it is never printed twice.
+
+What is *not* shown is as deliberate. `conclusion.id`, the batch stamp, the entry
+index and `conclusion.anchor` — its label and room coordinates — are what the VR
+app needs to float a panel in space. They tell whoever reads this page nothing,
+so none of them is rendered.
 
 ### Products
 
@@ -116,16 +121,17 @@ is a behavioural fix, so an empty product list is a real answer, not a gap.
 | State | Shown as |
 | --- | --- |
 | no product carries a link | "Nothing to buy — these fixes are behavioural." |
-| a product with a URL | `text-mist` underlined in `decoration-smoke`, with a `↗` in `text-ash` |
+| a product with a URL | `text-paper` underlined in `decoration-white/30`, with a `↗` — set apart by the underline, never by a colour |
 
 Product links open in a new tab with `rel="noreferrer noopener"`.
 
 ### Totals
 
 Above the list, `ConclusionTotals` states what a scan is worth: the sum of every
-entry's savings at `heading-sm`, then the count of fixes. The scan list at
-`/outputs` shows the same figure per row, so the value of a scan is visible
-before opening it.
+entry's savings at `heading-sm`, then the count of fixes. It appears only when a
+scan holds more than one conclusion — with one, it would just restate that card's
+own *Money saving*. The scan list at `/outputs` shows the same figure per row, so
+the value of a scan is visible before opening it.
 
 ### Money
 
@@ -144,9 +150,14 @@ as `CHF NaN` or as a confident zero.
 | State | View |
 | --- | --- |
 | nothing accepted anywhere | The list says so, and explains that solutions are accepted in the headset. |
-| nothing accepted for this scan | The detail view names the batch and says the same. |
-| failed | The server's `detail` message in `coral-red`. |
-| has conclusions | Totals, then the entry list. |
+| nothing accepted for this scan | The detail view says the same. |
+| failed | The server's `detail` message, in `text-paper` like everything else here. |
+| has conclusions | The title, the date beneath it, then the cards. |
+
+A scan is named on both views by its first conclusion's title, never by its date
+or its batch stamp: what was found is what identifies it. The date stays as a
+`caption` line under the title, which is the one thing that tells two similar
+scans apart.
 
 There is no *Run analysis* button. Conclusions are produced by the headset
 through `/receive-data` and accepted in VR; this app reads what came of that,
@@ -173,7 +184,7 @@ Two rules it does enforce:
 
 - Only `http:`, `https:` and `mailto:` become clickable links. A `javascript:`
   or `data:` href in model output renders as text.
-- Links stay monochrome — `text-mist` underlined in `decoration-smoke` — so
+- Links stay monochrome — `text-paper` underlined in `decoration-white/30` — so
   markdown can never spend the view's one chromatic accent.
 
 Blocks carry their own top margin and the first child's is stripped, so a card
@@ -183,26 +194,31 @@ can sit tight around a `<Markdown>` without a stray gap at the top.
 
 ## Reaching the API
 
-The browser never calls the API directly. `next.config.ts` forwards `/api` to
-wherever the server runs, so every request the browser makes is same-origin.
+The browser calls the API directly, at the routes the server actually serves.
+FastAPI mounts them at its root — `/companies`, `/get-accepted-solutions`,
+`/gemini-outputs` — so those are the paths
+[`src/lib/api.ts`](src/lib/api.ts) asks for, appended to the host and nothing
+else. There is no `/api` prefix anywhere in this app, because there is none on
+the server: `/api/companies` is a 404.
 
-This is not a detail. The API's CORS allowlist is `http://localhost:3000` and
-nothing else — a preflight from any other address comes back `400` with no
-`access-control-allow-origin`, so a browser refuses the request before it is
-sent. Served from anywhere but that one address, every call failed. Forwarding
-server to server sidesteps it: CORS does not apply to the hop from the Next
-server to the API, and the app behaves identically wherever it is deployed.
+`NEXT_PUBLIC_API_URL` is the one place the host is written down, defaulting to
+the deployed server. Set it to point a deployment or a dev session somewhere
+else.
 
-`API_ORIGIN` sets the upstream, and is the only place the host is written down.
-`NEXT_PUBLIC_API_URL` bypasses the forwarding for a browser that is allowed to
-call a server directly.
+The cost of calling directly is that CORS applies. Whatever server this points
+at has to list the origin the app is served from in its `ALLOWED_ORIGINS`, or
+the browser refuses each request before sending it — which surfaces here as
+"Could not reach …". That is a line in the server's `.env`, not something to
+work around from this side.
 
 ## When the API fails
 
 The API sits behind a proxy that answers with its own HTML error page, and it is
 not always up. Every request goes through one place in
 [`src/lib/api.ts`](src/lib/api.ts) that turns any of that into one readable
-sentence in `coral-red` — never a wall of markup, never a bare "Failed to fetch".
+sentence — `coral-red` on the start and settings pages, `text-paper` on the
+conclusion views, which carry no colour. Never a wall of markup, never a bare
+"Failed to fetch".
 
 | Failure | Shown as |
 | --- | --- |
