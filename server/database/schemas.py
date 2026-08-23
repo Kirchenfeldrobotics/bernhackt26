@@ -1,7 +1,12 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, field_validator
+
+# primary keys were an autoincrement counter before the uuid migration, and a
+# column's type cannot be changed in place, so rows written back then still hold
+# integers; serve both as text rather than 500 on the old ones
+IdText = Annotated[str, BeforeValidator(str)]
 
 # what a caller may set on a company
 class CompanyIn(BaseModel):
@@ -23,7 +28,7 @@ class CompanyIn(BaseModel):
 class CompanyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
+    id: IdText
     name: str
     website: Optional[str]
     details: Optional[str]
@@ -64,7 +69,7 @@ class AcceptedSolutionConclusion(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
+    id: IdText
     batch: str
     title: str
     problem: str
@@ -87,7 +92,7 @@ class ConclusionOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
+    id: IdText
     company_name: str
     batch: str
     title: str
