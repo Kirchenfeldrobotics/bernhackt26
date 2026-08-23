@@ -1,8 +1,9 @@
 import json
+import re
 from typing import Any, Optional
 
 from google.genai import types
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 import llm.gemini as gemini
 
@@ -74,13 +75,36 @@ class Conclusion(BaseModel):
         "when that suits the problem better."
     )
     savings_10y_chf: str = Field(
-        description="Formatted exactly as '|amount|explanation': a pipe, the CHF amount "
-        "saved over ten years, another pipe, then a one-line explanation of why that "
-        "much is saved, with no separator before it."
+        description="Exactly '|amount|explanation': a pipe, then the whole number of "
+        "Swiss francs saved over ten years as digits only -- no currency symbol, no "
+        "thousands separator, no decimals -- then a pipe, then one sentence saying "
+        "where that figure comes from. Example: |1200|LED bulbs cut lighting use by "
+        "about 70%."
     )
     anchor: Anchor = Field(
         description="Which MRUK anchor this belongs near, and where the panel floats."
     )
+
+    # the model writes this as free text, so pin it to |amount|explanation before
+    # it reaches the database, where it is one column
+    @field_validator("savings_10y_chf", mode="before")
+    @classmethod
+    def normalise_savings(cls, value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError("savings_10y_chf must be a string")
+
+        # tolerate a missing leading pipe rather than failing a whole scan
+        amount, separator, explanation = value.strip().lstrip("|").partition("|")
+        if not separator:
+            raise ValueError("savings_10y_chf must be '|amount|explanation'")
+
+        # strip currency and thousands separators the prompt asked it to omit
+        digits = re.search(r"\d+", amount.replace("'", "").replace(",", "").replace(" ", ""))
+        explanation = explanation.strip()
+        if digits is None or not explanation:
+            raise ValueError(f"savings_10y_chf has no amount or no explanation: {value!r}")
+
+        return f"|{int(digits.group())}|{explanation}"
 
 
 # the whole structured answer stage three returns
@@ -202,13 +226,17 @@ Return only JSON in the required schema, filled in as follows:
     product; unset for written/behavioural fixes.
   - `description`: how it fixes the problem -- a few concrete sentences, not
     marketing copy.
-- `savings_10y_chf`: formatted exactly as `|amount|explanation` -- a pipe,
-  the CHF amount saved over ten years as a positive number, another pipe, then
-  a one-line explanation of why that much is saved, directly after with no
-  separator. Be realistic for an office of this size -- a plausible small
-  number beats an impressive invented one. Example:
-  `|1200|Switching to LED bulbs cuts lighting electricity use by roughly 70%,
-  saving an estimated 1200 CHF over ten years.`
+- `savings_10y_chf`: exactly `|amount|explanation`, in three parts and nothing
+  else:
+  1. a leading pipe;
+  2. the amount: the whole number of Swiss francs saved over ten years, written
+     as digits only. No `CHF`, no `.-`, no thousands separator, no decimals;
+  3. a second pipe, then one sentence saying where that figure comes from.
+
+  Be realistic for an office of this size -- a plausible small number beats an
+  impressive invented one. Never put a pipe anywhere else in the sentence.
+  Correct: `|1200|LED bulbs cut lighting electricity use by roughly 70%.`
+  Wrong: `1200 CHF`, `|CHF 1'200|...`, `|1200.00|...`, `1200|...`
 - `anchor`: where the panel belongs --
   - `label`: copy one label exactly as written in the anchor list above.
   - `position`: x, y, z in metres, in the same coordinate space as the
