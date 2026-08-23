@@ -1,18 +1,21 @@
 /**
  * The API, reached through this app's own origin. `next.config.ts` forwards
- * /api to wherever the server actually runs.
+ * /backend to wherever the server actually runs.
  *
  * Going through our own origin rather than naming the API host here is what
  * makes the app work off localhost at all: the API only allows CORS from
  * localhost:3000, so a browser anywhere else is refused before the request is
  * even sent. Same-origin requests are not subject to that.
  *
+ * The prefix is "/backend" rather than "/api" because the nginx vhost in front
+ * of this app keeps "/api" for itself; see the note in `next.config.ts`.
+ *
  * Set NEXT_PUBLIC_API_URL to call a server directly instead -- useful against a
  * local one that allows your origin.
  */
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/backend";
 
-// Naming "/api" in an error message tells nobody anything.
+// Naming "/backend" in an error message tells nobody anything.
 const API_LABEL = API_URL.startsWith("/") ? "the API" : API_URL;
 
 // A hung request should fail rather than spin forever behind a "Loading…".
