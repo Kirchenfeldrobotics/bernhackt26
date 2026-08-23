@@ -1,19 +1,16 @@
 /**
- * The API, reached through this app's own origin. `next.config.ts` forwards
- * /api to wherever the server actually runs.
+ * Where the API runs. Paths below are the server's own routes -- /companies,
+ * /get-accepted-solutions -- appended to this, with nothing in between: there
+ * is no /api prefix on the server, so there is none here either.
  *
- * Going through our own origin rather than naming the API host here is what
- * makes the app work off localhost at all: the API only allows CORS from
- * localhost:3000, so a browser anywhere else is refused before the request is
- * even sent. Same-origin requests are not subject to that.
- *
- * Set NEXT_PUBLIC_API_URL to call a server directly instead -- useful against a
- * local one that allows your origin.
+ * Point a deployment somewhere else with NEXT_PUBLIC_API_URL, e.g. at a server
+ * on your own machine. That server has to allow this app's origin: set
+ * ALLOWED_ORIGINS on it, or the browser refuses the request before sending it.
  */
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+const DEFAULT_API_URL = "https://bernhackt26.kirchenfeldrobotics.ch";
 
-// Naming "/api" in an error message tells nobody anything.
-const API_LABEL = API_URL.startsWith("/") ? "the API" : API_URL;
+// A trailing slash would make every path a double slash, which FastAPI 404s on.
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_URL).replace(/\/+$/, "");
 
 // A hung request should fail rather than spin forever behind a "Loading…".
 const TIMEOUT_MS = 30_000;
@@ -80,8 +77,8 @@ function errorMessage(body: string, response: Response): string {
 /** fetch() rejects with a bare "Failed to fetch"; say what that actually means. */
 function networkMessage(cause: unknown): string {
   if (cause instanceof DOMException && cause.name === "TimeoutError")
-    return `${API_LABEL} did not answer within ${TIMEOUT_MS / 1000} seconds.`;
-  return `Could not reach ${API_LABEL}. It may be down, or unreachable from here.`;
+    return `${API_URL} did not answer within ${TIMEOUT_MS / 1000} seconds.`;
+  return `Could not reach ${API_URL}. It may be down, or unreachable from here.`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
