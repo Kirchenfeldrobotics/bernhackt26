@@ -8,6 +8,7 @@ import AppShell from "@/components/AppShell";
 import ConclusionList, { ConclusionTotals } from "@/components/ConclusionList";
 import Markdown from "@/components/Markdown";
 import {
+  ConclusionUnsupported,
   formatBatchDate,
   getGeminiOutput,
   runConclusion,
@@ -47,13 +48,22 @@ function ConclusionPanel({
   const [conclusion, setConclusion] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Once the server has said it has no analysis endpoint, the button is not
+  // worth offering again.
+  const [unsupported, setUnsupported] = useState(false);
 
   async function run() {
     setError(null);
     setBusy(true);
     try {
-      setConclusion(await runConclusion(batch, company));
+      const produced = await runConclusion(batch, company);
+      if (produced === null) {
+        setError("The analysis returned nothing for this scan.");
+      } else {
+        setConclusion(produced);
+      }
     } catch (cause) {
+      if (cause instanceof ConclusionUnsupported) setUnsupported(true);
       setError(message(cause));
     } finally {
       setBusy(false);
@@ -71,12 +81,14 @@ function ConclusionPanel({
           description together with {company}&rsquo;s own description, names the
           problems it finds, and turns each one into a fix with a price on it.
         </p>
-        <button type="button" onClick={run} disabled={busy} className={`${PRIMARY} mt-4`}>
-          {busy ? "Analysing…" : "Run analysis"}
-        </button>
+        {!unsupported && (
+          <button type="button" onClick={run} disabled={busy} className={`${PRIMARY} mt-4`}>
+            {busy ? "Analysing…" : "Run analysis"}
+          </button>
+        )}
         {busy && (
           <p className="mt-3 text-body-sm leading-body-sm text-ash">
-            Two model calls, so this takes a moment.
+            Several model calls, so this takes a moment.
           </p>
         )}
         {error !== null && (
@@ -96,14 +108,16 @@ function ConclusionPanel({
             <ConclusionTotals conclusion={conclusion} />
           </div>
           <p className="mt-2 text-caption leading-caption text-ash">
-            Analysed for {conclusion.company} on{" "}
+            Analysed for {conclusion.company ?? company} on{" "}
             {formatBatchDate(conclusion.created_at)}
           </p>
         </div>
 
-        <button type="button" onClick={run} disabled={busy} className={GHOST}>
-          {busy ? "Analysing…" : "Re-run analysis"}
-        </button>
+        {!unsupported && (
+          <button type="button" onClick={run} disabled={busy} className={GHOST}>
+            {busy ? "Analysing…" : "Re-run analysis"}
+          </button>
+        )}
       </div>
 
       {error !== null && (
@@ -115,13 +129,16 @@ function ConclusionPanel({
       </div>
 
       {/* The problems step 1 found, kept verbatim. Folded away by default: the
-          fixes above are the answer, this is the working behind them. */}
-      <details className="mt-2 rounded-xl border border-graphite bg-carbon p-6">
-        <summary className="cursor-pointer list-none text-caption leading-caption text-fog transition-colors hover:text-mist">
-          Problems this was derived from
-        </summary>
-        <Markdown source={conclusion.problems} className="mt-4" />
-      </details>
+          fixes above are the answer, this is the working behind them. Not every
+          server stores them. */}
+      {conclusion.problems !== null && (
+        <details className="mt-2 rounded-xl border border-graphite bg-carbon p-6">
+          <summary className="cursor-pointer list-none text-caption leading-caption text-fog transition-colors hover:text-mist">
+            Problems this was derived from
+          </summary>
+          <Markdown source={conclusion.problems} className="mt-4" />
+        </details>
+      )}
     </section>
   );
 }
@@ -167,7 +184,13 @@ function OutputDetail({ batch, company }: { batch: string; company: string }) {
           Room description
         </h2>
         <div className="mt-4 rounded-xl border border-graphite bg-carbon p-6">
-          <Markdown source={output.description} />
+          {output.description.trim() === "" ? (
+            <p className="text-body-sm leading-body-sm tracking-body-sm text-ash">
+              No room description was stored for this scan.
+            </p>
+          ) : (
+            <Markdown source={output.description} />
+          )}
         </div>
       </section>
     </div>

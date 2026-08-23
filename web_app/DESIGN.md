@@ -85,38 +85,50 @@ is rendered by
 
 ### The five parts
 
-Every entry is read in the same five parts, in this order. Each part maps onto
-exactly one field of `ConclusionEntry` in
-[`server/solutions.py`](../server/solutions.py) — the server's structure is the
-source of truth, and the list never invents a field it does not serve.
+Every entry is read in the same five parts, in this order. Two server
+generations describe a conclusion differently, so `lib/api.ts` normalises both
+into one shape at the edge — the components never branch on which server
+answered.
 
-| # | Part | Server field | Type | Rendering |
-| --- | --- | --- | --- | --- |
-| 1 | **Title** | `title` | `str` | `body-lg` in `text-paper`, preceded by a monospaced index (`01`, `02`, …). `benefit` follows as a `body-sm` line in `text-fog`. |
-| 2 | **Problem** | `problem` | `str` | The negative impact. Label in `coral-red/80`, body in `text-mist`. |
-| 3 | **Solutions** | `solutions` | `str[]` | Two to four bullets, `list-disc` with `marker:text-smoke`. |
-| 4 | **Products** | `products` | `Product[] \| null` | Links out to where each thing is bought. See the states below. |
-| 5 | **Money saving** | `savings_10y_chf` | `float` | `subheading` in `text-paper`, the largest type on the card, with "over ten years" beside it and `savings_basis` beneath in `text-ash`. |
+| # | Part | Rendering |
+| --- | --- | --- |
+| 1 | **Title** | `body-lg` in `text-paper`, preceded by a monospaced index (`01`, `02`, …); the benefit line, where there is one, follows in `text-fog`. |
+| 2 | **Problem** | The negative impact. Label in `coral-red/80`, body in `text-mist`. |
+| 3 | **Solutions** | One bullet per fix, `list-disc` with `marker:text-smoke`, each with its description beneath in `text-ash`. |
+| 4 | **Products** | What to buy, and where. See the states below. |
+| 5 | **Money saving** | `subheading` in `text-paper`, the largest type on the card, with the basis beneath in `text-ash`. |
 
-The remaining fields — `anchor_label`, `position`, `placement_reasoning` — are
-placement data the VR app needs to float the panel in the room. They are not
-dropped: they sit in a footer below a `border-graphite` rule, monospaced, out of
-the reading order of the five parts.
+The two server shapes it accepts:
 
-### Products, and why it is null
+| | older | newer |
+| --- | --- | --- |
+| solutions | `string[]` | `{name, url, description}[]` |
+| products | separate `{name, url}[] \| null` | a solution carrying a `url` |
+| savings | `savings_10y_chf` number + `savings_basis` | `savings_10y_chf` as `"\|amount\|explanation"` |
+| anchor | `anchor_label` + `position` | `anchor{label, position}` |
+| list key | `entries` | `conclusions` |
 
-`products` is `null` on every entry the server writes today. Gemini has no
-product catalogue, so the field is deliberately kept out of the schema it answers
-with — anything it wrote there would be an invented shop URL. The slot waits for
-a real product source.
+Solutions and products are never zipped together by position — that pairing is
+invented, and it costs a product its own name.
 
-Null and empty are different states and read differently:
+Placement data (`anchor`, `position`, the placement reasoning) is what the VR
+app needs to float the panel in the room. It is not dropped: it sits in a
+monospaced footer below a `border-graphite` rule, out of the reading order of
+the five parts. Every one of these is optional, and an entry missing one is
+rendered without it rather than taking the view down.
+
+### Products, and why it can be null
+
+A URL is never invented. Where the pipeline has no catalogue, or the research
+turned up no clean source link, the field stays empty rather than being filled
+with a plausible-looking shop URL.
 
 | State | Shown as |
 | --- | --- |
-| `null` | "Not sourced yet — the analysis leaves this empty until a product catalogue is wired up." in `text-ash` |
-| `[]` | "Nothing to buy for this one." in `text-ash` |
-| non-empty | one link per product, `text-mist` underlined in `decoration-smoke`, with a `↗` in `text-ash` |
+| `null` | "Not sourced yet — the analysis leaves this empty until a product catalogue is wired up." |
+| `[]` | "Nothing to buy — these fixes are behavioural." |
+| a product with no URL | its name in `text-mist`, not a link |
+| a product with a URL | `text-mist` underlined in `decoration-smoke`, with a `↗` in `text-ash` |
 
 Product links open in a new tab with `rel="noreferrer noopener"`.
 
@@ -135,13 +147,18 @@ it, and apostrophe grouping (`CHF 4'820`) is how it is written here. Rappen are
 dropped — these are ten-year estimates, and decimals would imply precision the
 number does not have.
 
+An unparseable amount shows as "Unknown", and a conclusion where no entry
+carried a usable number falls back to the count of fixes. Neither ever renders
+as `CHF NaN` or as a confident zero.
+
 ### States of the view
 
 | State | View |
 | --- | --- |
 | no conclusion | A single card: what the analysis does, and `Run analysis` in acid lime — the view's one chromatic element. |
-| running | Button reads "Analysing…" and is disabled, with a line noting it is two model calls. |
+| running | Button reads "Analysing…" and is disabled, with a line noting it is several model calls. |
 | failed | The server's `detail` message in `coral-red` under the button, which re-enables. |
+| no such endpoint | A 404 or 405 means this server cannot analyse at all, so the message says so and the button is withdrawn rather than left to fail again. |
 | has a conclusion | Totals, a ghost `Re-run analysis`, the entry list, then the problems it was derived from, folded away. |
 
 The problems text is folded into a `<details>` on purpose: the fixes are the
@@ -171,6 +188,33 @@ Two rules it does enforce:
 
 Blocks carry their own top margin and the first child's is stripped, so a card
 can sit tight around a `<Markdown>` without a stray gap at the top.
+
+---
+
+## When the API fails
+
+The API sits behind a proxy that answers with its own HTML error page, and it is
+not always up. Every request goes through one place in
+[`src/lib/api.ts`](src/lib/api.ts) that turns any of that into one readable
+sentence in `coral-red` — never a wall of markup, never a bare "Failed to fetch".
+
+| Failure | Shown as |
+| --- | --- |
+| FastAPI error | its own `detail` message |
+| 502 / 503 / 504 | what is actually wrong, e.g. "The API is not reachable right now. The service behind the proxy is down or restarting." |
+| any other HTML or empty body | the status line, never the page |
+| no response at all — offline, DNS, TLS, CORS | "Could not reach the API at …" naming the URL |
+| no answer within 30s | the request is aborted and says so, rather than leaving a "Loading…" forever |
+
+Two rules behind this:
+
+- **Never assume a field is there.** A server that omits `conclusion` sends no
+  key at all, not `null` — and `undefined !== null` is true, which is exactly
+  how a missing field turns into a blank page. Responses are normalised on the
+  way in so every reader sees `null`.
+- **Degrade, don't disappear.** An empty room description, a missing savings
+  figure, an entry without placement data: each is shown as what it is, and none
+  of them takes the view down.
 
 ---
 
